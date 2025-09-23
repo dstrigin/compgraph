@@ -8,7 +8,8 @@ class MainMenu:
     def __init__(self, root):
         self.root = root
         self.root.title("Обработка изображений - Главное меню")
-        self.root.geometry("400x300")
+        self.root.geometry("800x600+550+250")
+        self.root.minsize(400, 300)
         self.root.configure(bg='#f0f0f0')
         
         self.setup_ui()
