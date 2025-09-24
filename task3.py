@@ -146,7 +146,7 @@ class ImageHSVConverter:
         self.canvas.pack(pady=20)
 
     def load_image(self):
-        self.img_path = filedialog.askopenfilename(filetypes=[("Image files", "*.png;*.jpg;*.jpeg")])
+        self.img_path = filedialog.askopenfilename(filetypes=[("Image files", "*.jpg *.jpeg *.png *.bmp *.tiff")])
         if self.img_path:
             self.img = Image.open(self.img_path)
             self.display_image(self.img)
