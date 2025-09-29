@@ -118,7 +118,7 @@ class ColorFiller:
             self.fill_color = color
             self.status_label.config(text=f"Цвет заливки: {color}")
             messagebox.showinfo("Инфо", "Алгоритм заливки цветом будет реализован здесь")
-    
+
     def fill_pattern_dialog(self):
         filename = filedialog.askopenfilename(
             title="Выберите изображение для заливки",
@@ -128,10 +128,64 @@ class ColorFiller:
             try:
                 self.pattern_image = Image.open(filename)
                 self.status_label.config(text=f"Загружено: {filename.split('/')[-1]}")
-                messagebox.showinfo("Инфо", "Алгоритм заливки изображением будет реализован здесь")
+                # Запуск заливки после выбора точки и загрузки рисунка
+                if hasattr(self, 'fill_point'):
+                    x, y = self.fill_point
+                    target_color = self.image.getpixel((x, y))
+                    self._flood_fill_pattern_recursive(x, y, target_color, self.pattern_image)
+                    self.photo = ImageTk.PhotoImage(self.image)
+                    self.canvas.itemconfig(self.canvas_image, image=self.photo)
             except Exception as e:
                 messagebox.showerror("Ошибка", f"Не удалось загрузить изображение: {e}")
-    
+
+    # --- Заменяем/дополняем метод fill_pattern_dialog ---
+    def fill_pattern_dialog(self):
+        filename = filedialog.askopenfilename(
+            title="Выберите изображение для заливки",
+            filetypes=[("Image files", "*.png *.jpg *.jpeg *.bmp *.gif")]
+        )
+        if filename:
+            try:
+                self.pattern_image = Image.open(filename)
+                self.status_label.config(text=f"Загружено: {filename.split('/')[-1]}")
+                # Запуск заливки после выбора точки и загрузки рисунка
+                if hasattr(self, 'fill_point'):
+                    x, y = self.fill_point
+                    target_color = self.image.getpixel((x, y))
+                    self._flood_fill_pattern_recursive(x, y, target_color, self.pattern_image)
+                    self.photo = ImageTk.PhotoImage(self.image)
+                    self.canvas.itemconfig(self.canvas_image, image=self.photo)
+            except Exception as e:
+                messagebox.showerror("Ошибка", f"Не удалось загрузить изображение: {e}")
+
+    # --- Рекурсивная заливка линиями с шаблоном ---
+    def _flood_fill_pattern_recursive(self, x, y, target_color, pattern):
+        pattern_width, pattern_height = pattern.size
+        if x < 0 or x >= self.canvas_width or y < 0 or y >= self.canvas_height:
+            return
+        current_color = self.image.getpixel((x, y))
+        if current_color != target_color:
+            return
+
+        x_left = x
+        while x_left > 0 and self.image.getpixel((x_left - 1, y)) == target_color:
+            x_left -= 1
+
+        x_right = x
+        while x_right < self.canvas_width - 1 and self.image.getpixel((x_right + 1, y)) == target_color:
+            x_right += 1
+
+        for xi in range(x_left, x_right + 1):
+            px = xi % pattern_width
+            py = y % pattern_height
+            self.draw.point((xi, y), fill=pattern.getpixel((px, py)))
+
+        for xi in range(x_left, x_right + 1):
+            self._flood_fill_pattern_recursive(xi, y - 1, target_color, pattern)
+
+        for xi in range(x_left, x_right + 1):
+            self._flood_fill_pattern_recursive(xi, y + 1, target_color, pattern)
+
     def detect_border(self):
         if hasattr(self, 'fill_point'):
             messagebox.showinfo("Инфо", "Алгоритм обнаружения границы будет реализован здесь")
