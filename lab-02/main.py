@@ -22,15 +22,15 @@ class MainMenu:
         button_frame = ttk.Frame(self.root)
         button_frame.pack(pady=30)
         
-        task1_btn = ttk.Button(button_frame, text="Задание 1: Преобразование в оттенки серого", 
+        task1_btn = ttk.Button(button_frame, text="Задание 1", 
             command=self.open_task1, width=30)
         task1_btn.pack(pady=10)
         
-        task2_btn = ttk.Button(button_frame, text="Задание 2: Анализ цветовых каналов", 
+        task2_btn = ttk.Button(button_frame, text="Задание 2", 
             command=self.open_task2, width=30)
         task2_btn.pack(pady=10)
         
-        task3_btn = ttk.Button(button_frame, text="Задание 3: Преобразование HSV", 
+        task3_btn = ttk.Button(button_frame, text="Задание 3", 
             command=self.open_task3, width=30)
         task3_btn.pack(pady=10)
         
