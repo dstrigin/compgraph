@@ -113,32 +113,53 @@ class ColorFiller:
         self.status_label.config(text=f"Точка заливки: ({event.x}, {event.y})")
     
     def fill_color_dialog(self):
-        color = colorchooser.askcolor(title="Выберите цвет заливки")[1]
-        if color:
-            self.fill_color = color
-            self.status_label.config(text=f"Цвет заливки: {color}")
-            messagebox.showinfo("Инфо", "Алгоритм заливки цветом будет реализован здесь")
+        color_tuple = colorchooser.askcolor(title="Выберите цвет заливки")
+        if color_tuple and color_tuple[1]:
+            hex_color = color_tuple[1]
+            rgb_color = color_tuple[0]
+            
+            self.fill_color = hex_color
+            self.status_label.config(text=f"Цвет заливки: {hex_color}")
+            
+            if hasattr(self, 'fill_point'):
+                x, y = self.fill_point
+                target_color = self.image.getpixel((x, y))
+                
+                fill_rgb = (int(rgb_color[0]), int(rgb_color[1]), int(rgb_color[2]))
+                
+                self._flood_fill_recursive(x, y, fill_rgb, target_color)
+                
+                self.photo = ImageTk.PhotoImage(self.image)
+                self.canvas.itemconfig(self.canvas_image, image=self.photo)
+                
+            else:
+                messagebox.showerror("Ошибка", "Сначала поставьте точку заливки с помощью ПКМ")
+    
+    def _flood_fill_recursive(self, x, y, color, target_color):
+        if x < 0 or x >= self.canvas_width or y < 0 or y >= self.canvas_height:
+            return
+        current_color = self.image.getpixel((x, y))
+        if current_color != target_color:
+            return
+        
+        x_left = x
+        while x_left > 0 and self.image.getpixel((x_left - 1, y)) == target_color:
+            x_left -= 1
 
-    def fill_pattern_dialog(self):
-        filename = filedialog.askopenfilename(
-            title="Выберите изображение для заливки",
-            filetypes=[("Image files", "*.png *.jpg *.jpeg *.bmp *.gif")]
-        )
-        if filename:
-            try:
-                self.pattern_image = Image.open(filename)
-                self.status_label.config(text=f"Загружено: {filename.split('/')[-1]}")
-                # Запуск заливки после выбора точки и загрузки рисунка
-                if hasattr(self, 'fill_point'):
-                    x, y = self.fill_point
-                    target_color = self.image.getpixel((x, y))
-                    self._flood_fill_pattern_recursive(x, y, target_color, self.pattern_image)
-                    self.photo = ImageTk.PhotoImage(self.image)
-                    self.canvas.itemconfig(self.canvas_image, image=self.photo)
-            except Exception as e:
-                messagebox.showerror("Ошибка", f"Не удалось загрузить изображение: {e}")
+        x_right = x
+        while x_right < self.canvas_width - 1 and self.image.getpixel((x_right + 1, y)) == target_color:
+            x_right += 1
 
-    # --- Заменяем/дополняем метод fill_pattern_dialog ---
+        for xi in range(x_left, x_right + 1):
+            self.image.putpixel((xi, y), color) 
+
+        for xi in range(x_left, x_right + 1):
+            self._flood_fill_recursive(xi, y - 1, color, target_color)
+
+        for xi in range(x_left, x_right + 1):
+            self._flood_fill_recursive(xi, y + 1, color, target_color)
+        
+
     def fill_pattern_dialog(self):
         filename = filedialog.askopenfilename(
             title="Выберите изображение для заливки",
