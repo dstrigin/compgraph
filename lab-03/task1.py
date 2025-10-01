@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, colorchooser
 from PIL import Image, ImageTk, ImageDraw
 import numpy as np
+from collections import deque
 
 class ColorFiller:
     def __init__(self, root):
@@ -13,11 +14,11 @@ class ColorFiller:
         self.drawing = False
         self.last_x, self.last_y = None, None
         self.fill_color = "blue"
-        self.border_color = "red"
+        self.border_color = (255, 0, 0)
         self.pattern_image = None
+        self.border_points = []
         
         self.create_widgets()
-        
         self.init_canvas_image()
     
     def create_widgets(self):
@@ -60,6 +61,9 @@ class ColorFiller:
         
         ttk.Button(border_frame, text="Показать границу", 
                   command=self.show_border).pack(fill=tk.X, pady=5)
+        
+        ttk.Button(border_frame, text="Выбрать цвет границы", 
+                  command=self.choose_border_color).pack(fill=tk.X, pady=5)
         
         tools_frame = ttk.LabelFrame(right_frame, text="Инструменты", padding=10)
         tools_frame.pack(fill=tk.X, pady=10)
@@ -107,10 +111,107 @@ class ColorFiller:
         self.last_x, self.last_y = None, None
     
     def set_fill_point(self, event):
+        self.canvas.delete("fill_point")
+        
         self.fill_point = (event.x, event.y)
         self.canvas.create_oval(event.x-3, event.y-3, event.x+3, event.y+3, 
                                fill="red", outline="red", tags="fill_point")
         self.status_label.config(text=f"Точка заливки: ({event.x}, {event.y})")
+    
+    def choose_border_color(self):
+        """Выбор цвета для выделения границы"""
+        color_tuple = colorchooser.askcolor(title="Выберите цвет для выделения границы")
+        if color_tuple and color_tuple[1]:
+            hex_color = color_tuple[1].lstrip('#')
+            self.border_color = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+            self.status_label.config(text=f"Цвет границы установлен")
+    
+    def detect_border(self):
+        """Выделение границы связной области с исправлением ошибки цвета"""
+        if not hasattr(self, 'fill_point'):
+            messagebox.showwarning("Внимание", "Сначала установите точку на границе (правый клик)")
+            return
+        
+        x, y = self.fill_point
+        
+        if x < 0 or x >= self.canvas_width or y < 0 or y >= self.canvas_height:
+            messagebox.showerror("Ошибка", "Точка заливки находится вне холста")
+            return
+        
+        try:
+            border_pixel_color = self.image.getpixel((x, y))
+            
+            self.border_points = self._trace_boundary(x, y, border_pixel_color)
+            
+            if not self.border_points:
+                messagebox.showinfo("Инфо", "Граница не найдена")
+                return
+            
+            for point in self.border_points:
+                self.image.putpixel(point, self.border_color)
+            
+            self.photo = ImageTk.PhotoImage(self.image)
+            self.canvas.itemconfig(self.canvas_image, image=self.photo)
+            
+            self.status_label.config(text=f"Граница выделена: {len(self.border_points)} точек")
+            
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Ошибка при выделении границы: {str(e)}")
+    
+    def _trace_boundary(self, start_x, start_y, boundary_color):
+        """Алгоритм трассировки границы с использованием 8-связной области"""
+        directions = [(-1, -1), (0, -1), (1, -1), 
+                     (-1, 0),          (1, 0),
+                     (-1, 1),  (0, 1),  (1, 1)]
+        
+        if self.image.getpixel((start_x, start_y)) != boundary_color:
+            for dx, dy in directions:
+                nx, ny = start_x + dx, start_y + dy
+                if (0 <= nx < self.canvas_width and 0 <= ny < self.canvas_height and 
+                    self.image.getpixel((nx, ny)) == boundary_color):
+                    start_x, start_y = nx, ny
+                    break
+            else:
+                return []
+        
+        boundary_points = []
+        visited = set()
+        
+        queue = deque([(start_x, start_y)])
+        visited.add((start_x, start_y))
+        
+        while queue:
+            x, y = queue.popleft()
+            boundary_points.append((x, y))
+            
+            for dx, dy in directions:
+                nx, ny = x + dx, y + dy
+                
+                if (0 <= nx < self.canvas_width and 0 <= ny < self.canvas_height and 
+                    (nx, ny) not in visited and 
+                    self.image.getpixel((nx, ny)) == boundary_color):
+                    
+                    visited.add((nx, ny))
+                    queue.append((nx, ny))
+        
+        return boundary_points
+    
+    def show_border(self):
+        """Показать границу поверх изображения"""
+        if not self.border_points:
+            messagebox.showinfo("Инфо", "Сначала выделите границу")
+            return
+        
+        temp_image = self.image.copy()
+        
+        for point in self.border_points:
+            temp_image.putpixel(point, self.border_color)
+        
+        temp_photo = ImageTk.PhotoImage(temp_image)
+        self.canvas.itemconfig(self.canvas_image, image=temp_photo)
+        self.canvas.image = temp_photo
+        
+        self.status_label.config(text="Граница показана поверх изображения")
     
     def fill_color_dialog(self):
         color_tuple = colorchooser.askcolor(title="Выберите цвет заливки")
@@ -158,7 +259,6 @@ class ColorFiller:
 
         for xi in range(x_left, x_right + 1):
             self._flood_fill_recursive(xi, y + 1, color, target_color)
-        
 
     def fill_pattern_dialog(self):
         filename = filedialog.askopenfilename(
@@ -199,7 +299,12 @@ class ColorFiller:
         for xi in range(x_left, x_right + 1):
             px = xi % pattern_width
             py = y % pattern_height
-            self.draw.point((xi, y), fill=pattern.getpixel((px, py)))
+            pattern_pixel = pattern.getpixel((px, py))
+            if isinstance(pattern_pixel, int):
+                pattern_pixel = (pattern_pixel, pattern_pixel, pattern_pixel)
+            elif len(pattern_pixel) == 4:
+                pattern_pixel = pattern_pixel[:3]
+            self.image.putpixel((xi, y), pattern_pixel)
 
         for xi in range(x_left, x_right + 1):
             self._flood_fill_pattern_recursive(xi, y - 1, target_color, pattern)
@@ -207,21 +312,13 @@ class ColorFiller:
         for xi in range(x_left, x_right + 1):
             self._flood_fill_pattern_recursive(xi, y + 1, target_color, pattern)
 
-    def detect_border(self):
-        if hasattr(self, 'fill_point'):
-            messagebox.showinfo("Инфо", "Алгоритм обнаружения границы будет реализован здесь")
-        else:
-            messagebox.showwarning("Внимание", "Сначала установите точку заливки (правый клик)")
-    
-    def show_border(self):
-        messagebox.showinfo("Инфо", "Отображение границы будет реализовано здесь")
-    
     def clear_canvas(self):
         self.image = Image.new("RGB", (self.canvas_width, self.canvas_height), "white")
         self.draw = ImageDraw.Draw(self.image)
         self.photo = ImageTk.PhotoImage(self.image)
         self.canvas.itemconfig(self.canvas_image, image=self.photo)
         self.canvas.delete("fill_point")
+        self.border_points = []
         self.status_label.config(text="Холст очищен")
     
     def load_image(self):
@@ -232,6 +329,9 @@ class ColorFiller:
         if filename:
             try:
                 loaded_image = Image.open(filename)
+                if loaded_image.mode != 'RGB':
+                    loaded_image = loaded_image.convert('RGB')
+                
                 if loaded_image.size != (self.canvas_width, self.canvas_height):
                     loaded_image = loaded_image.resize((self.canvas_width, self.canvas_height))
                 
@@ -239,7 +339,12 @@ class ColorFiller:
                 self.draw = ImageDraw.Draw(self.image)
                 self.photo = ImageTk.PhotoImage(self.image)
                 self.canvas.itemconfig(self.canvas_image, image=self.photo)
+                self.border_points = []
                 self.status_label.config(text="Изображение загружено")
             except Exception as e:
                 messagebox.showerror("Ошибка", f"Не удалось загрузить изображение: {e}")
-        
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = ColorFiller(root)
+    root.mainloop()
