@@ -22,6 +22,11 @@ class PolygonEditor:
         # Атрибут для проверки точки
         self.test_point = None
 
+        # Атрибуты для классификации точки относительно ребра
+        self.classification_edge = None
+        self.classification_point = None
+        self.classification_result = None
+
         self.mode = "create"
 
         self.create_widgets()
@@ -189,6 +194,9 @@ class PolygonEditor:
         self.test_point = None
         self.intersection_point = None
         self.dynamic_line_end = None
+        self.classification_edge = None
+        self.classification_point = None
+        self.classification_result = None
         self.canvas.delete("all")
         self.update_info("Сцена очищена")
 
@@ -331,25 +339,220 @@ class PolygonEditor:
         if self.selected_polygon_idx is None:
             messagebox.showwarning("Внимание", "Сначала выберите полигон")
             return
-        messagebox.showinfo("Поворот", "Поворот вокруг точки будет реализован")
+
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Поворот вокруг точки")
+        dialog.geometry("350x200")
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        ttk.Label(dialog, text="Введите параметры поворота:").pack(pady=10)
+
+        # Точка вращения
+        point_frame = ttk.Frame(dialog)
+        point_frame.pack(pady=5)
+        ttk.Label(point_frame, text="Точка (x,y):").pack(side=tk.LEFT)
+        x_entry = ttk.Entry(point_frame, width=8)
+        x_entry.pack(side=tk.LEFT, padx=2)
+        x_entry.insert(0, "100")
+        y_entry = ttk.Entry(point_frame, width=8)
+        y_entry.pack(side=tk.LEFT, padx=2)
+        y_entry.insert(0, "100")
+
+        # Угол поворота
+        angle_frame = ttk.Frame(dialog)
+        angle_frame.pack(pady=5)
+        ttk.Label(angle_frame, text="Угол (градусы):").pack(side=tk.LEFT)
+        angle_entry = ttk.Entry(angle_frame, width=10)
+        angle_entry.pack(side=tk.LEFT, padx=5)
+        angle_entry.insert(0, "45")
+
+        def apply_rotation():
+            try:
+                center_x = float(x_entry.get())
+                center_y = float(y_entry.get())
+                angle_deg = float(angle_entry.get())
+                
+                polygon = self.polygons[self.selected_polygon_idx]
+                self.polygons[self.selected_polygon_idx] = self.rotate_polygon(polygon, center_x, center_y, angle_deg)
+                self.draw_current_state()
+                messagebox.showinfo("Поворот", f"Полигон повернут на {angle_deg}° вокруг точки ({center_x}, {center_y})")
+                dialog.destroy()
+            except ValueError:
+                messagebox.showerror("Ошибка", "Введите числовые значения")
+
+        ttk.Button(dialog, text="Применить", command=apply_rotation).pack(pady=10)
 
     def rotate_around_center(self):
         if self.selected_polygon_idx is None:
             messagebox.showwarning("Внимание", "Сначала выберите полигон")
             return
-        messagebox.showinfo("Поворот", "Поворот вокруг центра будет реализован")
+
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Поворот вокруг центра")
+        dialog.geometry("300x150")
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        ttk.Label(dialog, text="Введите угол поворота:").pack(pady=10)
+
+        angle_frame = ttk.Frame(dialog)
+        angle_frame.pack(pady=5)
+        ttk.Label(angle_frame, text="Угол (градусы):").pack(side=tk.LEFT)
+        angle_entry = ttk.Entry(angle_frame, width=10)
+        angle_entry.pack(side=tk.LEFT, padx=5)
+        angle_entry.insert(0, "45")
+
+        def apply_rotation():
+            try:
+                angle_deg = float(angle_entry.get())
+                
+                polygon = self.polygons[self.selected_polygon_idx]
+                center_x, center_y = self.get_polygon_center(polygon)
+                self.polygons[self.selected_polygon_idx] = self.rotate_polygon(polygon, center_x, center_y, angle_deg)
+                self.draw_current_state()
+                messagebox.showinfo("Поворот", f"Полигон повернут на {angle_deg}° вокруг своего центра")
+                dialog.destroy()
+            except ValueError:
+                messagebox.showerror("Ошибка", "Введите числовые значения")
+
+        ttk.Button(dialog, text="Применить", command=apply_rotation).pack(pady=10)
 
     def scale_around_point(self):
         if self.selected_polygon_idx is None:
             messagebox.showwarning("Внимание", "Сначала выберите полигон")
             return
-        messagebox.showinfo("Масштабирование", "Масштабирование относительно точки будет реализовано")
+
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Масштабирование относительно точки")
+        dialog.geometry("350x200")
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        ttk.Label(dialog, text="Введите параметры масштабирования:").pack(pady=10)
+
+        # Точка масштабирования
+        point_frame = ttk.Frame(dialog)
+        point_frame.pack(pady=5)
+        ttk.Label(point_frame, text="Точка (x,y):").pack(side=tk.LEFT)
+        x_entry = ttk.Entry(point_frame, width=8)
+        x_entry.pack(side=tk.LEFT, padx=2)
+        x_entry.insert(0, "100")
+        y_entry = ttk.Entry(point_frame, width=8)
+        y_entry.pack(side=tk.LEFT, padx=2)
+        y_entry.insert(0, "100")
+
+        # Коэффициенты масштабирования
+        scale_frame = ttk.Frame(dialog)
+        scale_frame.pack(pady=5)
+        ttk.Label(scale_frame, text="Масштаб (sx,sy):").pack(side=tk.LEFT)
+        sx_entry = ttk.Entry(scale_frame, width=8)
+        sx_entry.pack(side=tk.LEFT, padx=2)
+        sx_entry.insert(0, "1.5")
+        sy_entry = ttk.Entry(scale_frame, width=8)
+        sy_entry.pack(side=tk.LEFT, padx=2)
+        sy_entry.insert(0, "1.5")
+
+        def apply_scaling():
+            try:
+                center_x = float(x_entry.get())
+                center_y = float(y_entry.get())
+                sx = float(sx_entry.get())
+                sy = float(sy_entry.get())
+                
+                polygon = self.polygons[self.selected_polygon_idx]
+                self.polygons[self.selected_polygon_idx] = self.scale_polygon(polygon, center_x, center_y, sx, sy)
+                self.draw_current_state()
+                messagebox.showinfo("Масштабирование", f"Полигон масштабирован с коэффициентами ({sx}, {sy}) относительно точки ({center_x}, {center_y})")
+                dialog.destroy()
+            except ValueError:
+                messagebox.showerror("Ошибка", "Введите числовые значения")
+
+        ttk.Button(dialog, text="Применить", command=apply_scaling).pack(pady=10)
 
     def scale_around_center(self):
         if self.selected_polygon_idx is None:
             messagebox.showwarning("Внимание", "Сначала выберите полигон")
             return
-        messagebox.showinfo("Масштабирование", "Масштабирование относительно центра будет реализовано")
+
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Масштабирование относительно центра")
+        dialog.geometry("300x150")
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        ttk.Label(dialog, text="Введите коэффициенты масштабирования:").pack(pady=10)
+
+        scale_frame = ttk.Frame(dialog)
+        scale_frame.pack(pady=5)
+        ttk.Label(scale_frame, text="Масштаб (sx,sy):").pack(side=tk.LEFT)
+        sx_entry = ttk.Entry(scale_frame, width=8)
+        sx_entry.pack(side=tk.LEFT, padx=2)
+        sx_entry.insert(0, "1.5")
+        sy_entry = ttk.Entry(scale_frame, width=8)
+        sy_entry.pack(side=tk.LEFT, padx=2)
+        sy_entry.insert(0, "1.5")
+
+        def apply_scaling():
+            try:
+                sx = float(sx_entry.get())
+                sy = float(sy_entry.get())
+                
+                polygon = self.polygons[self.selected_polygon_idx]
+                center_x, center_y = self.get_polygon_center(polygon)
+                self.polygons[self.selected_polygon_idx] = self.scale_polygon(polygon, center_x, center_y, sx, sy)
+                self.draw_current_state()
+                messagebox.showinfo("Масштабирование", f"Полигон масштабирован с коэффициентами ({sx}, {sy}) относительно своего центра")
+                dialog.destroy()
+            except ValueError:
+                messagebox.showerror("Ошибка", "Введите числовые значения")
+
+        ttk.Button(dialog, text="Применить", command=apply_scaling).pack(pady=10)
+
+    def rotate_polygon(self, polygon, center_x, center_y, angle_deg):
+        """Поворот полигона вокруг заданной точки на указанный угол"""
+        angle_rad = math.radians(angle_deg)
+        cos_angle = math.cos(angle_rad)
+        sin_angle = math.sin(angle_rad)
+        
+        rotated_polygon = []
+        for x, y in polygon:
+            dx = x - center_x
+            dy = y - center_y
+            
+            new_x = dx * cos_angle - dy * sin_angle
+            new_y = dx * sin_angle + dy * cos_angle
+            
+            rotated_polygon.append((new_x + center_x, new_y + center_y))
+            
+        return rotated_polygon
+
+    def scale_polygon(self, polygon, center_x, center_y, sx, sy):
+        """Масштабирование полигона относительно заданной точки"""
+        scaled_polygon = []
+        for x, y in polygon:
+            dx = x - center_x
+            dy = y - center_y
+            
+            new_x = dx * sx
+            new_y = dy * sy
+            
+            scaled_polygon.append((new_x + center_x, new_y + center_y))
+            
+        return scaled_polygon
+
+    def get_polygon_center(self, polygon):
+        """Вычисление центра полигона"""
+        if len(polygon) == 0:
+            return 0, 0
+            
+        # Для замкнутого полигона последняя точка равна первой
+        points = polygon[:-1] if len(polygon) > 1 and polygon[0] == polygon[-1] else polygon
+        
+        x_sum = sum(p[0] for p in points)
+        y_sum = sum(p[1] for p in points)
+        
+        return x_sum / len(points), y_sum / len(points)
 
     def find_edge_intersection(self):
         self.mode = "edge_intersection"
@@ -400,10 +603,48 @@ class PolygonEditor:
 
     def point_edge_classification(self):
         self.mode = "point_edge_classification"
-        self.update_info("Режим: Классификация точки. Выберите ребро и точку")
+        self.classification_edge = None
+        self.classification_point = None
+        self.classification_result = None
+        self.draw_current_state()
+        self.update_info("Режим: Классификация точки относительно ребра.\nКликните для выбора двух точек ребра, затем точки для классификации.")
 
     def handle_point_edge_classification_click(self, x, y):
-        messagebox.showinfo("Классификация", "Классификация точки относительно ребра будет реализована")
+        if self.classification_edge is None:
+            self.classification_edge = [(x, y)]
+            self.update_info("Выбрана первая точка ребра. Кликните для выбора второй точки ребра.")
+        elif len(self.classification_edge) == 1:
+            self.classification_edge.append((x, y))
+            self.update_info("Ребро задано. Кликните для выбора точки для классификации.")
+        else:
+            self.classification_point = (x, y)
+            self.classification_result = self.classify_point_relative_to_edge(
+                self.classification_point, 
+                self.classification_edge[0], 
+                self.classification_edge[1]
+            )
+            
+            result_text = f"Точка находится {self.classification_result} относительно ребра"
+            self.update_info(f"{result_text}\nКликните для нового ребра или точки.")
+            
+            self.classification_edge = None
+
+        self.draw_current_state()
+
+    def classify_point_relative_to_edge(self, point, edge_start, edge_end):
+        """Классификация положения точки относительно ребра (справа или слева)"""
+        x, y = point
+        x1, y1 = edge_start
+        x2, y2 = edge_end
+        
+        cross_product = (x2 - x1) * (y - y1) - (y2 - y1) * (x - x1)
+        
+        if cross_product > 0:
+            return "СЛЕВА"
+        elif cross_product < 0:
+            return "СПРАВА"
+        else:
+            return "НА ПРЯМОЙ"
 
     def draw_current_state(self):
         self.canvas.delete("all")
@@ -459,6 +700,34 @@ class PolygonEditor:
             x, y, is_inside = self.test_point
             color = "green" if is_inside else "red"
             self.canvas.create_oval(x - 5, y - 5, x + 5, y + 5, fill=color, outline="black")
+
+        if self.mode == "point_edge_classification":
+            if self.classification_edge:
+                if len(self.classification_edge) >= 1:
+                    x1, y1 = self.classification_edge[0]
+                    self.canvas.create_oval(x1 - 4, y1 - 4, x1 + 4, y1 + 4, fill="purple", outline="purple")
+                    
+                    if len(self.classification_edge) >= 2:
+                        x2, y2 = self.classification_edge[1]
+                        self.canvas.create_oval(x2 - 4, y2 - 4, x2 + 4, y2 + 4, fill="purple", outline="purple")
+                        self.canvas.create_line(x1, y1, x2, y2, fill="purple", width=3)
+            
+            if self.classification_point:
+                x, y = self.classification_point
+                color = "orange"
+                if self.classification_result:
+                    if "СЛЕВА" in self.classification_result:
+                        color = "green"
+                    elif "СПРАВА" in self.classification_result:
+                        color = "red"
+                    elif "НА ПРЯМОЙ" in self.classification_result:
+                        color = "blue"
+                
+                self.canvas.create_oval(x - 5, y - 5, x + 5, y + 5, fill=color, outline="black")
+                
+                if self.classification_result:
+                    self.canvas.create_text(x + 15, y - 15, text=self.classification_result, 
+                                           fill="black", font=("Arial", 10, "bold"))
 
     def update_info(self, message):
         self.info_label.config(text=message)
