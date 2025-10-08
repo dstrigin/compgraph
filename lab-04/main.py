@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 import math
-
+import numpy as np
 
 class PolygonEditor:
     def __init__(self, root):
@@ -14,15 +14,12 @@ class PolygonEditor:
         self.current_polygon = []
         self.selected_polygon_idx = None
 
-        # Атрибуты для поиска пересечения ребер
         self.edges = []
         self.intersection_point = None
         self.dynamic_line_end = None
 
-        # Атрибут для проверки точки
         self.test_point = None
 
-        # Атрибуты для классификации точки относительно ребра
         self.classification_edge = None
         self.classification_point = None
         self.classification_result = None
@@ -326,7 +323,8 @@ class PolygonEditor:
                 dy = float(dy_entry.get())
                 # Реальная логика смещения
                 polygon = self.polygons[self.selected_polygon_idx]
-                self.polygons[self.selected_polygon_idx] = [(p[0] + dx, p[1] + dy) for p in polygon]
+                matrix = self.get_translation_matrix(dx, dy)
+                self.polygons[self.selected_polygon_idx] = self.affine_transform(polygon, matrix)
                 self.draw_current_state()
                 messagebox.showinfo("Смещение", f"Полигон смещен на dx={dx}, dy={dy}")
                 dialog.destroy()
@@ -511,35 +509,13 @@ class PolygonEditor:
 
     def rotate_polygon(self, polygon, center_x, center_y, angle_deg):
         """Поворот полигона вокруг заданной точки на указанный угол"""
-        angle_rad = math.radians(angle_deg)
-        cos_angle = math.cos(angle_rad)
-        sin_angle = math.sin(angle_rad)
-        
-        rotated_polygon = []
-        for x, y in polygon:
-            dx = x - center_x
-            dy = y - center_y
-            
-            new_x = dx * cos_angle - dy * sin_angle
-            new_y = dx * sin_angle + dy * cos_angle
-            
-            rotated_polygon.append((new_x + center_x, new_y + center_y))
-            
-        return rotated_polygon
+        matrix = self.get_rotation_matrix(center_x, center_y, angle_deg)
+        return self.affine_transform(polygon, matrix)
 
     def scale_polygon(self, polygon, center_x, center_y, sx, sy):
         """Масштабирование полигона относительно заданной точки"""
-        scaled_polygon = []
-        for x, y in polygon:
-            dx = x - center_x
-            dy = y - center_y
-            
-            new_x = dx * sx
-            new_y = dy * sy
-            
-            scaled_polygon.append((new_x + center_x, new_y + center_y))
-            
-        return scaled_polygon
+        matrix = self.get_scaling_matrix(center_x, center_y, sx, sy)
+        return self.affine_transform(polygon, matrix)
 
     def get_polygon_center(self, polygon):
         """Вычисление центра полигона"""
@@ -553,6 +529,63 @@ class PolygonEditor:
         y_sum = sum(p[1] for p in points)
         
         return x_sum / len(points), y_sum / len(points)
+    
+    def affine_transform(self, points, transformation_matrix):
+        """Применяет аффинное преобразование через матрицы"""
+        # Преобразуем точки в однородные координаты (x, y, 1)
+        homogeneous_points = []
+        for x, y in points:
+            homogeneous_points.append([x, y, 1])
+        
+        homogeneous_points = np.array(homogeneous_points)
+        
+        # Применяем преобразование (умножаем точки на матрицу)
+        transformed_points = homogeneous_points @ transformation_matrix
+        
+        # Возвращаем к декартовым координатам (x, y)
+        return [(float(p[0]), float(p[1])) for p in transformed_points]
+
+    def get_translation_matrix(self, dx, dy):
+        """Матрица смещения"""
+        return np.array([
+            [1, 0, 0],
+            [0, 1, 0],
+            [dx, dy, 1]
+        ])
+
+    def get_rotation_matrix(self, center_x, center_y, angle_deg):
+        """Матрица поворота вокруг точки"""
+        angle_rad = math.radians(angle_deg)
+        cos_a = math.cos(angle_rad)
+        sin_a = math.sin(angle_rad)
+        
+        rotate = np.array([
+            [cos_a, sin_a, 0],
+            [-sin_a, cos_a, 0],
+            [0, 0, 1]
+        ])
+        
+        # Составное преобразование: сместить к началу -> повернуть -> вернуть обратно
+        translate_to_origin = self.get_translation_matrix(-center_x, -center_y)
+        translate_back = self.get_translation_matrix(center_x, center_y)
+        
+        # Композиция преобразований
+        return translate_to_origin @ rotate @ translate_back
+
+    def get_scaling_matrix(self, center_x, center_y, sx, sy):
+        """Матрица масштабирования относительно точки"""
+        scale = np.array([
+            [sx, 0, 0],
+            [0, sy, 0],
+            [0, 0, 1]
+        ])
+        
+        # Составное преобразование: сместить к началу -> масштабировать -> вернуть обратно
+        translate_to_origin = self.get_translation_matrix(-center_x, -center_y)
+        translate_back = self.get_translation_matrix(center_x, center_y)
+        
+        # Композиция преобразований
+        return translate_to_origin @ scale @ translate_back
 
     def find_edge_intersection(self):
         self.mode = "edge_intersection"
@@ -585,21 +618,58 @@ class PolygonEditor:
             return (px, py)
 
         return None
+    
+    def is_polygon_convex(self, polygon):
+        """Проверка является ли полигон выпуклым"""
+        if len(polygon) < 4:  # Для замкнутого полигона нужно минимум 4 точки
+            return True  # Точки и ребра считаем выпуклыми
+        
+        # Берем только уникальные точки (исключаем замыкающую)
+        points = polygon[:-1] if polygon[0] == polygon[-1] else polygon
+        
+        if len(points) < 3:
+            return True
+        
+        # Проверяем знаки векторных произведений
+        sign = None
+        n = len(points)
+        
+        for i in range(n):
+            p1 = points[i]
+            p2 = points[(i + 1) % n]
+            p3 = points[(i + 2) % n]
+            
+            # Векторное произведение
+            cross = (p2[0] - p1[0]) * (p3[1] - p2[1]) - (p2[1] - p1[1]) * (p3[0] - p2[0])
+            
+            if cross == 0:
+                continue  # Коллинеарные точки
+            
+            if sign is None:
+                sign = cross > 0
+            elif (cross > 0) != sign:
+                return False  # Нашли точку перегиба
+        
+        return True
 
     def point_in_polygon_test(self):
         if self.selected_polygon_idx is None:
             messagebox.showwarning("Внимание", "Сначала выберите полигон для проверки.")
             return
 
-        if len(self.polygons[self.selected_polygon_idx]) < 3:
+        polygon = self.polygons[self.selected_polygon_idx]
+        
+        if len(polygon) < 3:
             messagebox.showwarning("Внимание", "Выбранный объект не является полигоном (нужно минимум 3 вершины).")
             return
 
+        is_convex = self.is_polygon_convex(polygon)
+        poly_type = "выпуклый" if is_convex else "невыпуклый"
+        
         self.mode = "point_in_polygon"
         self.test_point = None
         self.draw_current_state()
-        self.update_info(
-            "Режим: Проверка точки в полигоне.\nКликните для проверки принадлежности точки выбранному полигону.")
+        self.update_info(f"Режим: Проверка точки в {poly_type} полигоне.\nКликните для проверки принадлежности точки выбранному полигону.")
 
     def point_edge_classification(self):
         self.mode = "point_edge_classification"
