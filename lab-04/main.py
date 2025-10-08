@@ -637,7 +637,10 @@ class PolygonEditor:
         x1, y1 = edge_start
         x2, y2 = edge_end
         
-        cross_product = (x2 - x1) * (y - y1) - (y2 - y1) * (x - x1)
+        edge_vector = (x2 - x1, y2 - y1)
+        point_vector = (x - x1, y - y1)
+        
+        cross_product = edge_vector[0] * point_vector[1] - edge_vector[1] * point_vector[0]
         
         if cross_product > 0:
             return "СЛЕВА"
