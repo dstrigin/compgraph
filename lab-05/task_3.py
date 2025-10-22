@@ -25,14 +25,43 @@ class BezierSplineEditor:
         self.canvas.bind("<Button-3>", self.on_right_click)
 
     def add_point(self, x: float, y: float):
-        """Добавить опорную точку"""
+        """Добавить опорную точку с корректировкой для C1 гладкости."""
+
+        # 1. Добавляем новую точку
         self.points.append((x, y))
+        idx = len(self.points) - 1  # Индекс новой точки
+
         point_id = self.canvas.create_oval(
             x - self.point_radius, y - self.point_radius,
             x + self.point_radius, y + self.point_radius,
             fill=self.point_color, outline="black", width=2
         )
         self.point_ids.append(point_id)
+
+        # 2. Применяем C1 гладкость, если новая точка является P_{3k+1}
+        # P_{3k-1}, P_{3k}, P_{3k+1} должны быть коллинеарны
+
+        # Проверяем, является ли новая точка P_{3k+1} (индексы 1, 4, 7, ...)
+        if (idx % 3) == 1:
+            knot_idx = idx - 1  # P_{3k} (узел)
+            prev_partner_idx = knot_idx - 1  # P_{3k-1} (V2 предыдущего сегмента)
+
+            # Условие: Должны существовать P_{3k} и P_{3k-1} для применения правила.
+            if 0 <= prev_partner_idx < knot_idx:
+                # Новая точка P_{3k+1} должна быть отражена от P_{3k-1}
+                # относительно P_{3k}, что нарушило бы положение P_{3k+1}.
+                # Вместо этого мы корректируем P_{3k-1} (V2) на основе новой P_{3k+1} (V1)
+
+                knot_x, knot_y = self.points[knot_idx]
+
+                # P_{3k-1} = 2*P_{3k} - P_{3k+1}
+                partner_x = 2 * knot_x - x
+                partner_y = 2 * knot_y - y
+
+                self.points[prev_partner_idx] = (partner_x, partner_y)
+                self._update_point_visual(prev_partner_idx)
+
+        # 3. Перерисовываем
         self.redraw()
 
     def remove_point(self, idx: int):
@@ -44,16 +73,88 @@ class BezierSplineEditor:
             self.selected_point = None
             self.redraw()
 
+    def _update_point_visual(self, idx: int):
+        """Внутренняя функция для обновления позиции маркера точки"""
+        x, y = self.points[idx]
+        self.canvas.coords(
+            self.point_ids[idx],
+            x - self.point_radius, y - self.point_radius,
+            x + self.point_radius, y + self.point_radius
+        )
+
     def move_point(self, idx: int, x: float, y: float):
-        """Переместить опорную точку"""
-        if 0 <= idx < len(self.points):
-            self.points[idx] = (x, y)
-            self.canvas.coords(
-                self.point_ids[idx],
-                x - self.point_radius, y - self.point_radius,
-                x + self.point_radius, y + self.point_radius
-            )
-            self.redraw()
+        """
+        Переместить опорную точку и обновить связанные точки для C1 гладкости.
+        Условие: P_{3k-1}, P_{3k}, P_{3k+1} должны быть коллинеарны,
+        и P_{3k} должен быть серединой отрезка P_{3k-1}P_{3k+1} (симметрия для гладкости).
+        """
+        if not (0 <= idx < len(self.points)):
+            return
+
+        old_x, old_y = self.points[idx]
+        dx, dy = x - old_x, y - old_y
+
+        # 1. Сначала перемещаем саму точку
+        self.points[idx] = (x, y)
+
+        # 2. Применяем правила C1 непрерывности в зависимости от типа точки (индекса)
+
+        # Индексы 1, 4, 7, ... (P_{3k+1} - V1^k)
+        if (idx % 3) == 1:
+            knot_idx = idx - 1  # P_{3k}
+            prev_partner_idx = knot_idx - 1  # P_{3k-1} (V2^{k-1})
+
+            # Если существует P_{3k-1}, отражаем его относительно узла P_{3k}
+            if 0 <= prev_partner_idx < len(self.points):
+                knot_x, knot_y = self.points[knot_idx]
+
+                # P_{3k-1} = 2*P_{3k} - P_{3k+1}
+                partner_x = 2 * knot_x - x
+                partner_y = 2 * knot_y - y
+
+                self.points[prev_partner_idx] = (partner_x, partner_y)
+                self._update_point_visual(prev_partner_idx)
+
+        # Индексы 2, 5, 8, ... (P_{3k-1} - V2^{k-1})
+        elif (idx % 3) == 2:
+            knot_idx = idx + 1  # P_{3k}
+            next_partner_idx = idx + 2  # P_{3k+1} (V1^k)
+
+            # Если существует P_{3k+1}, отражаем его относительно узла P_{3k}
+            if 0 <= next_partner_idx < len(self.points):
+                knot_x, knot_y = self.points[knot_idx]
+
+                # P_{3k+1} = 2*P_{3k} - P_{3k-1}
+                partner_x = 2 * knot_x - x
+                partner_y = 2 * knot_y - y
+
+                self.points[next_partner_idx] = (partner_x, partner_y)
+                self._update_point_visual(next_partner_idx)
+
+        # Индексы 0, 3, 6, ... (P_{3k} - Узел/Knot)
+        elif (idx % 3) == 0:
+            # При перемещении узла P_{3k} его соседние контрольные точки
+            # P_{3k-1} и P_{3k+1} должны сдвинуться на ту же величину (dx, dy).
+            # Это сохраняет симметрию и коллинеарность.
+
+            prev_partner_idx = idx - 1  # P_{3k-1}
+            next_partner_idx = idx + 1  # P_{3k+1}
+
+            # Сдвиг P_{3k-1}
+            if 0 <= prev_partner_idx < len(self.points):
+                px, py = self.points[prev_partner_idx]
+                self.points[prev_partner_idx] = (px + dx, py + dy)
+                self._update_point_visual(prev_partner_idx)
+
+            # Сдвиг P_{3k+1}
+            if 0 <= next_partner_idx < len(self.points):
+                nx, ny = self.points[next_partner_idx]
+                self.points[next_partner_idx] = (nx + dx, ny + dy)
+                self._update_point_visual(next_partner_idx)
+
+        # Обновление визуального представления текущей точки
+        self._update_point_visual(idx)
+        self.redraw()
 
     def find_point_at(self, x: float, y: float) -> Optional[int]:
         """Найти точку по координатам"""
@@ -167,19 +268,19 @@ class BezierSplineEditor:
 
 
 def main():
-    root = tk.Toplevel()
+    root = tk.Tk()  # Изменено на tk.Tk() для основного окна
     root.title("Задание 3 - Кубические сплайны Безье")
     root.geometry("800x650")
 
     # Заголовок
-    title = tk.Label(root, text="Кубические сплайны Безье", font=("Arial", 16, "bold"))
+    title = tk.Label(root, text="Кубические сплайны Безье (C1 Непрерывность)", font=("Arial", 16, "bold"))
     title.pack(pady=10)
 
     # Инструкции
     instructions = tk.Label(
         root,
         text="ЛКМ: добавить/переместить точку | ПКМ: удалить точку\n"
-             "Каждые 4 точки формируют один кубический сегмент Безье",
+             "При перемещении контрольных точек обеспечивается гладкое (C1) соединение сегментов.",
         font=("Arial", 10),
         fg="gray"
     )
@@ -202,17 +303,47 @@ def main():
     def add_demo_curve():
         """Добавить демонстрационную кривую"""
         editor.clear()
+        # Точки: P0, P1, P2, P3 (узел), P4, P5, P6 (узел)
         demo_points = [
-            (100, 250), (150, 100), (250, 100), (300, 250),
-            (300, 250), (350, 400), (450, 400), (500, 250),
-            (500, 250), (550, 150), (650, 150), (700, 250)
+            (100, 250),  # P0 (Knot)
+            (150, 100),  # P1
+            (250, 100),  # P2 -> должен быть отражен от P4
+            (300, 250),  # P3 (Knot)
+            (350, 400),  # P4 -> должен быть отражен от P2
+            (450, 400),  # P5
+            (500, 250),  # P6 (Knot)
+            (550, 150),  # P7
+            (650, 150),  # P8
+            (700, 250)  # P9 (Knot)
         ]
         for x, y in demo_points:
             editor.add_point(x, y)
 
-    demo_btn = tk.Button(button_frame, text="Пример", command=add_demo_curve, width=15)
+        # Ручная коррекция для C1: P2, P3, P4 должны быть коллинеарны
+        # Изначально они не коллинеарны, но после добавления все точки P_i
+        # начинают работать по правилам C1, как только одну из них сдвинут.
+        # Для начального гладкого состояния: P4 = 2*P3 - P2
+        # P4_x = 2*300 - 250 = 350
+        # P4_y = 2*250 - 100 = 400. P4 уже задан верно! (350, 400)
+
+        # P7 = 2*P6 - P5
+        # P7_x = 2*500 - 450 = 550
+        # P7_y = 2*250 - 400 = 100. P7 задан как (550, 150).
+        # Чтобы показать эффект, я добавлю точки, которые изначально не C1,
+        # и увидим, что редактор их скорректирует при первом движении.
+        # Для чистоты примера, P7 должен быть (550, 100). Исправим демо-данные.
+
+        editor.clear()
+        demo_points_c1 = [
+            (100, 250), (150, 100), (250, 100), (300, 250),
+            (350, 400), (450, 400), (500, 250),
+            (550, 100),  # Исправлено для C1
+            (650, 150), (700, 250)
+        ]
+        for x, y in demo_points_c1:
+            editor.add_point(x, y)
+
+    demo_btn = tk.Button(button_frame, text="Пример (Гладкий)", command=add_demo_curve, width=15)
     demo_btn.pack(side=tk.LEFT, padx=5)
 
     root.mainloop()
-
-
