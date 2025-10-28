@@ -6,6 +6,7 @@
 #include <random>
 #include <functional>
 #include <random>
+#include <algorithm>
 
 const float PI = 3.14159265359f;
 
@@ -14,6 +15,8 @@ struct TurtleState {
     float angle;
     float thickness;
     sf::Color color;
+    int depth;
+    float line_length;
 };
 
 void drawThickLine(sf::RenderWindow& window, sf::Vector2f p1, sf::Vector2f p2, float thickness, sf::Color color) {
@@ -44,14 +47,14 @@ int main() {
     const unsigned int WINDOW_HEIGHT = 1000;
     
     // --- ВЫБЕРИТЕ ФАЙЛ ДЛЯ ЗАПУСКА ---
-    //const std::string FILENAME = "rules/tree"; int ITERATIONS = 5;
+    const std::string FILENAME = "rules/tree"; int ITERATIONS = 12;
     //const std::string FILENAME = "rules/koch"; int ITERATIONS = 5;
-    const std::string FILENAME = "rules/dragon"; int ITERATIONS = 15;
+    //const std::string FILENAME = "rules/dragon"; int ITERATIONS = 15;
 
 
-    const float LINE_LENGTH = 10.f; 
-    const float INITIAL_THICKNESS = 4.0f;
+    const float LINE_LENGTH = 30.f; 
     const bool isTree = (FILENAME == "rules/tree");
+    const float INITIAL_THICKNESS = isTree ? 15.0f : 5.f;
 
     // --- ЗАГРУЗКА L-СИСТЕМЫ ---
     LSystem lsys;
@@ -63,20 +66,21 @@ int main() {
 
     std::random_device rd;
     std::mt19937 gen(rd());
-    std::uniform_real_distribution<> angle_dis(-10.0f, 10.0f);
+    std::uniform_real_distribution<> angle_dis(-15.0f, 15.0f);
+    std::uniform_real_distribution<> line_dis(0.5f, 1.f);
 
     // --- 1-й ПРОХОД: ВЫЧИСЛЕНИЕ ГРАНИЦ ДЛЯ МАСШТАБИРОВАНИЯ ---
     sf::Vector2f minBounds(0, 0), maxBounds(0, 0);
     {
-        TurtleState currentState = {{0, 0}, lsys.getInitialAngle(), INITIAL_THICKNESS, sf::Color::White};
+        TurtleState currentState = {{0, 0}, lsys.getInitialAngle(), INITIAL_THICKNESS, sf::Color::White, 0, LINE_LENGTH};
         std::stack<TurtleState> stateStack;
         std::string drawChars = "FG";
 
         for (char c : generatedString) {
             if (drawChars.find(c) != std::string::npos) { 
                 float angleRad = currentState.angle * PI / 180.f;
-                currentState.position.x += LINE_LENGTH * cos(angleRad);
-                currentState.position.y += LINE_LENGTH * sin(angleRad);
+                currentState.position.x += currentState.line_length * cos(angleRad);
+                currentState.position.y += currentState.line_length * sin(angleRad);
                 
                 minBounds.x = std::min(minBounds.x, currentState.position.x);
                 minBounds.y = std::min(minBounds.y, currentState.position.y);
@@ -88,6 +92,10 @@ int main() {
                 currentState.angle -= baseAngle;
             } else if (c == '[') {
                 stateStack.push(currentState);
+                if (isTree) {
+                    currentState.thickness *= 0.8f;
+                    currentState.line_length *= 0.8f;
+                }
             } else if (c == ']') {
                 if (!stateStack.empty()) {
                     currentState = stateStack.top();
@@ -119,39 +127,50 @@ int main() {
     sf::Color brown(139, 69, 19);
     sf::Color green(0, 128, 0);
 
-    std::vector<std::function<void(sf::RenderWindow&)>> drawCalls;
+    struct DrawCall {
+        float thickness;
+        std::function<void(sf::RenderWindow&)> call;
+    };
+    std::vector<DrawCall> drawCalls;
 
-    TurtleState currentState = {{0, 0}, lsys.getInitialAngle(), INITIAL_THICKNESS, isTree ? brown : sf::Color::White};
+    TurtleState currentState = {{0, 0}, lsys.getInitialAngle(), INITIAL_THICKNESS, isTree ? brown : sf::Color::White, 0, LINE_LENGTH};
     std::stack<TurtleState> stateStack;
-    const int maxDepth = 15;
     std::string drawChars = "FG";
 
     for (char c : generatedString) {
         if (drawChars.find(c) != std::string::npos) {
             sf::Vector2f startPos = currentState.position * scale + offset;
-            
-            float angleRad = currentState.angle * PI / 180.f;
-            currentState.position.x += LINE_LENGTH * cos(angleRad);
-            currentState.position.y += LINE_LENGTH * sin(angleRad);
-            
-            sf::Vector2f endPos = currentState.position * scale + offset;
-            float thickness = currentState.thickness; // * scale; // Масштабирование толщины можно убрать для наглядности
-            sf::Color color = currentState.color;
 
-            drawCalls.push_back([=](sf::RenderWindow& win){
+            float angleRad = (currentState.angle + (isTree ? angle_dis(gen) : 0.0f)) * PI / 180.f;
+            currentState.position.x += currentState.line_length * cos(angleRad);
+            currentState.position.y += currentState.line_length * sin(angleRad);
+
+            sf::Vector2f endPos = currentState.position * scale + offset;
+            float thickness = currentState.thickness;
+
+            sf::Color color = color.White;
+
+            float t = 0.0f;
+            if (isTree) {
+                t = static_cast<float>(currentState.depth) / static_cast<float>(ITERATIONS);
+                t = std::clamp(t, 0.0f, 1.0f);
+                color = lerpColor(brown, green, t);
+            }
+            
+            drawCalls.push_back({thickness, [=](sf::RenderWindow& win) {
                 drawThickLine(win, startPos, endPos, thickness, color);
-            });
+            }});
 
         } else if (c == '+') {
-            currentState.angle += baseAngle + (isTree ? angle_dis(gen) : 0.0f);
+            currentState.angle += baseAngle;
         } else if (c == '-') {
-            currentState.angle -= baseAngle + (isTree ? angle_dis(gen) : 0.0f);
+            currentState.angle -= baseAngle;
         } else if (c == '[') {
             stateStack.push(currentState);
             if (isTree) {
                 currentState.thickness *= 0.8f;
-                float t = static_cast<float>(stateStack.size()) / maxDepth;
-                currentState.color = lerpColor(brown, green, t);
+                currentState.depth++;
+                currentState.line_length *= 0.8f;
             }
         } else if (c == ']') {
             if (!stateStack.empty()) {
@@ -161,7 +180,12 @@ int main() {
         }
     }
 
-    // --- ГЛАВНЫЙ ЦИКЛ ПРИЛОЖЕНИЯ ---
+    std::sort(drawCalls.begin(), drawCalls.end(),
+            [](const DrawCall& a, const DrawCall& b) {
+                return a.thickness > b.thickness;
+            });
+
+    // --- ГЛАВНЫЙ ЦИКЛ ОТРИСОВКИ ---
     while (window.isOpen()) {
         sf::Event event;
         while (window.pollEvent(event)) {
@@ -170,13 +194,14 @@ int main() {
         }
 
         window.clear(sf::Color::Black);
-        
-        for(const auto& call : drawCalls) {
-            call(window);
+
+        for (const auto& dc : drawCalls) {
+            dc.call(window);
         }
 
         window.display();
     }
+
 
     return 0;
 }
