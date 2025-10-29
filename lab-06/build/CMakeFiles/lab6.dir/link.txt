@@ -1,1 +1,0 @@
-/usr/bin/c++ CMakeFiles/lab6.dir/main.cpp.o -o lab6  /usr/lib/x86_64-linux-gnu/libGL.so /usr/lib/x86_64-linux-gnu/libGLU.so /usr/lib/x86_64-linux-gnu/libglut.so 
