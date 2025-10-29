@@ -5,6 +5,10 @@
 #include <cmath>
 #include <string>
 
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
 class Point3D {
 public:
     double x, y, z, w;
@@ -146,8 +150,8 @@ Matrix4x4 createRotationYMatrix(double angle) {
     double rad = angle * M_PI / 180.0;
     Matrix4x4 mat;
     mat.m[0][0] = cos(rad);
-    mat.m[0][2] = sin(rad);
-    mat.m[2][0] = -sin(rad);
+    mat.m[0][2] = -sin(rad);
+    mat.m[2][0] = sin(rad);
     mat.m[2][2] = cos(rad);
     return mat;
 }
@@ -161,6 +165,36 @@ Matrix4x4 createRotationZMatrix(double angle) {
     mat.m[1][1] = cos(rad);
     return mat;
 }
+
+Matrix4x4 createArbitraryRotationMatrix(const Point3D& p1, const Point3D& p2, double angle) {
+    Point3D axis = p2 - p1;
+    double len = sqrt(axis.x * axis.x + axis.y * axis.y + axis.z * axis.z);
+    double u = axis.x / len;
+    double v = axis.y / len;
+    double w = axis.z / len;
+    
+    double rad = angle * M_PI / 180.0;
+    double cosA = cos(rad);
+    double sinA = sin(rad);
+    
+    Matrix4x4 T = createTranslationMatrix(-p1.x, -p1.y, -p1.z);
+    
+    Matrix4x4 R;
+    R.m[0][0] = u*u + (1 - u*u)*cosA;
+    R.m[0][1] = u*v*(1 - cosA) - w*sinA;
+    R.m[0][2] = u*w*(1 - cosA) + v*sinA;
+    R.m[1][0] = u*v*(1 - cosA) + w*sinA;
+    R.m[1][1] = v*v + (1 - v*v)*cosA;
+    R.m[1][2] = v*w*(1 - cosA) - u*sinA;
+    R.m[2][0] = u*w*(1 - cosA) - v*sinA;
+    R.m[2][1] = v*w*(1 - cosA) + u*sinA;
+    R.m[2][2] = w*w + (1 - w*w)*cosA;
+    
+    Matrix4x4 T_inv = createTranslationMatrix(p1.x, p1.y, p1.z);
+    
+    return T_inv * R * T;
+}
+
 
 Matrix4x4 createReflectionMatrix(char plane) {
     Matrix4x4 mat;
@@ -230,42 +264,6 @@ Polyhedron createIcosahedron() {
             polygonPoints.push_back(vertices[idx]);
         }
         polygons.push_back(Polygon(polygonPoints));
-    }
-    
-    return Polyhedron(polygons);
-}
-
-Polyhedron createDodecahedron() {
-    double phi = (1.0 + sqrt(5.0)) / 2.0;
-    double a = 1.0 / phi;
-    double b = 1.0;
-    
-    std::vector<Point3D> vertices;
-    
-    // Создаем вершины додекаэдра
-    for (int i = -1; i <= 1; i += 2) {
-        for (int j = -1; j <= 1; j += 2) {
-            vertices.push_back(Point3D(0, i * a, j * b));
-            vertices.push_back(Point3D(i * a, j * b, 0));
-            vertices.push_back(Point3D(i * b, 0, j * a));
-        }
-    }
-    
-    // Масштабируем
-    for (auto& v : vertices) {
-        v = v * 0.4;
-    }
-    
-    // Упрощенные грани додекаэдра (реальные были бы сложнее)
-    std::vector<Polygon> polygons;
-    for (int i = 0; i < vertices.size(); i += 5) {
-        if (i + 4 < vertices.size()) {
-            std::vector<Point3D> facePoints;
-            for (int j = 0; j < 5; j++) {
-                facePoints.push_back(vertices[(i + j) % vertices.size()]);
-            }
-            polygons.push_back(Polygon(facePoints));
-        }
     }
     
     return Polyhedron(polygons);
@@ -384,7 +382,6 @@ void keyboard(unsigned char key, int x, int y) {
         // Выбор фигур
         case '1': currentPolyhedron = createHexahedron(); break;
         case '2': currentPolyhedron = createIcosahedron(); break;
-        case '3': currentPolyhedron = createDodecahedron(); break;
         
         // Аффинные преобразования
         case 't': applyTransformation(createTranslationMatrix(0.5, 0, 0)); break;
@@ -397,6 +394,18 @@ void keyboard(unsigned char key, int x, int y) {
         case 'Y': applyTransformation(createRotationYMatrix(-15)); break;
         case 'z': applyTransformation(createRotationZMatrix(15)); break;
         case 'Z': applyTransformation(createRotationZMatrix(-15)); break;
+        case 'a': {
+            Point3D p1(1, 1, 1);
+            Point3D p2(-1, -1, -1);
+            applyTransformation(createArbitraryRotationMatrix(p1, p2, 15.0));
+            break;
+        }
+        case 'A': {
+            Point3D p1(1, 1, 1);
+            Point3D p2(-1, -1, -1);
+            applyTransformation(createArbitraryRotationMatrix(p1, p2, -15.0));
+            break;
+        }
         
         // Отражение
         case 'm': applyTransformation(createReflectionMatrix('X')); break;
@@ -448,11 +457,12 @@ void specialKeys(int key, int x, int y) {
 
 void printInstructions() {
     std::cout << "=== Управление ===" << std::endl;
-    std::cout << "Фигуры: 1-Куб, 2-Икосаэдр, 3-Додекаэдр" << std::endl;
+    std::cout << "Фигуры: 1-Гексаэдр (куб), 2-Икосаэдр" << std::endl;
     std::cout << "Преобразования:" << std::endl;
     std::cout << "  t/T - смещение по X" << std::endl;
     std::cout << "  s/S - масштаб" << std::endl;
     std::cout << "  x/X, y/Y, z/Z - повороты" << std::endl;
+    std::cout << "  a/A - поворот вокруг произвольной оси" << std::endl; // *** НОВАЯ ИНСТРУКЦИЯ ***
     std::cout << "  m,n,b - отражения (X,Y,Z плоскости)" << std::endl;
     std::cout << "  c/C - масштаб от центра" << std::endl;
     std::cout << "  p - переключение проекций" << std::endl;
