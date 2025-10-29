@@ -1,0 +1,7 @@
+sudo apt install cmake build-essential libgl1-mesa-dev freeglut3-dev libglu1-mesa-dev
+
+Для запуска:
+./lab6
+
+Для перекомпиляции:
+g++ -o lab6 main.cpp -lGL -lGLU -lglut -std=c++11
