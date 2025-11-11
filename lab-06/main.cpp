@@ -1,5 +1,4 @@
-#include <GL/glut.h>
-#include <GL/gl.h>
+#include <SFML/Graphics.hpp>
 #include <iostream>
 #include <vector>
 #include <cmath>
@@ -16,7 +15,6 @@ public:
     Point3D(double x = 0, double y = 0, double z = 0, double w = 1) 
         : x(x), y(y), z(z), w(w) {}
     
-    // Операторы для работы с точками
     Point3D operator+(const Point3D& other) const {
         return Point3D(x + other.x, y + other.y, z + other.z);
     }
@@ -65,6 +63,7 @@ public:
         
         if (w != 0 && w != 1) {
             x /= w; y /= w; z /= w;
+            w = 1.0;
         }
         return Point3D(x, y, z, w);
     }
@@ -111,14 +110,6 @@ public:
     }
 };
 
-// Глобальные переменные
-Polyhedron currentPolyhedron;
-float rotationX = 0.0f;
-float rotationY = 0.0f;
-bool perspectiveProjection = true;
-Matrix4x4 currentTransformation;
-std::string currentMode = "VIEW";
-
 // Матричные преобразования
 Matrix4x4 createTranslationMatrix(double tx, double ty, double tz) {
     Matrix4x4 mat;
@@ -140,8 +131,8 @@ Matrix4x4 createRotationXMatrix(double angle) {
     double rad = angle * M_PI / 180.0;
     Matrix4x4 mat;
     mat.m[1][1] = cos(rad);
-    mat.m[1][2] = -sin(rad);
-    mat.m[2][1] = sin(rad);
+    mat.m[1][2] = sin(rad);
+    mat.m[2][1] = -sin(rad);
     mat.m[2][2] = cos(rad);
     return mat;
 }
@@ -160,8 +151,8 @@ Matrix4x4 createRotationZMatrix(double angle) {
     double rad = angle * M_PI / 180.0;
     Matrix4x4 mat;
     mat.m[0][0] = cos(rad);
-    mat.m[0][1] = -sin(rad);
-    mat.m[1][0] = sin(rad);
+    mat.m[0][1] = sin(rad);
+    mat.m[1][0] = -sin(rad);
     mat.m[1][1] = cos(rad);
     return mat;
 }
@@ -169,6 +160,13 @@ Matrix4x4 createRotationZMatrix(double angle) {
 Matrix4x4 createArbitraryRotationMatrix(const Point3D& p1, const Point3D& p2, double angle) {
     Point3D axis = p2 - p1;
     double len = sqrt(axis.x * axis.x + axis.y * axis.y + axis.z * axis.z);
+
+    if (len == 0.0) {
+        Matrix4x4 I;
+        I.identity();
+        return I;
+    }
+
     double u = axis.x / len;
     double v = axis.y / len;
     double w = axis.z / len;
@@ -199,10 +197,33 @@ Matrix4x4 createArbitraryRotationMatrix(const Point3D& p1, const Point3D& p2, do
 Matrix4x4 createReflectionMatrix(char plane) {
     Matrix4x4 mat;
     switch (plane) {
-        case 'X': mat.m[0][0] = -1; break; // YZ plane
-        case 'Y': mat.m[1][1] = -1; break; // XZ plane
-        case 'Z': mat.m[2][2] = -1; break; // XY plane
+        case 'X': mat.m[0][0] = -1; break;
+        case 'Y': mat.m[1][1] = -1; break;
+        case 'Z': mat.m[2][2] = -1; break;
     }
+    return mat;
+}
+
+Matrix4x4 createPerspectiveMatrix(double fovY, double aspect, double zNear, double zFar) {
+    Matrix4x4 mat;
+    double f = 1.0 / tan(fovY * M_PI / 360.0);
+    mat.m[0][0] = f / aspect;
+    mat.m[1][1] = f;
+    mat.m[2][2] = (zFar + zNear) / (zNear - zFar);
+    mat.m[2][3] = (2.0 * zFar * zNear) / (zNear - zFar);
+    mat.m[3][2] = -1.0;
+    mat.m[3][3] = 0.0;
+    return mat;
+}
+
+Matrix4x4 createOrthographicMatrix(double left, double right, double bottom, double top, double zNear, double zFar) {
+    Matrix4x4 mat;
+    mat.m[0][0] = 2.0 / (right - left);
+    mat.m[1][1] = 2.0 / (top - bottom);
+    mat.m[2][2] = -2.0 / (zFar - zNear);
+    mat.m[0][3] = -(right + left) / (right - left);
+    mat.m[1][3] = -(top + bottom) / (top - bottom);
+    mat.m[2][3] = -(zFar + zNear) / (zFar - zNear);
     return mat;
 }
 
@@ -269,190 +290,19 @@ Polyhedron createIcosahedron() {
     return Polyhedron(polygons);
 }
 
-void drawPolyhedron(const Polyhedron& poly) {
-    glLineWidth(2.0f);
-    
-    GLfloat colors[][3] = {
-        {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f},
-        {1.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f},
-        {0.5f, 0.5f, 1.0f}, {1.0f, 0.5f, 0.0f}, {0.5f, 1.0f, 0.5f}
-    };
-    
-    for (size_t i = 0; i < poly.polygons.size(); i++) {
-        const Polygon& polygon = poly.polygons[i];
-        if (polygon.points.empty()) continue;
-        
-        glColor3fv(colors[i % 9]);
-        
-        glBegin(GL_LINE_LOOP);
-        for (const Point3D& point : polygon.points) {
-            glVertex3f(point.x, point.y, point.z);
-        }
-        glEnd();
-        
-        glPointSize(5.0f);
-        glBegin(GL_POINTS);
-        for (const Point3D& point : polygon.points) {
-            glVertex3f(point.x, point.y, point.z);
-        }
-        glEnd();
-    }
-}
+sf::Vector2f project(Point3D point, const Matrix4x4& mvp, int width, int height) {
+    Point3D transformed = mvp.transform(point);
 
-void drawText(float x, float y, const char* text) {
-    glRasterPos2f(x, y);
-    for (const char* c = text; *c != '\0'; c++) {
-        glutBitmapCharacter(GLUT_BITMAP_HELVETICA_12, *c);
+    if (transformed.w != 0) {
+        transformed.x /= transformed.w;
+        transformed.y /= transformed.w;
     }
-}
 
-void display() {
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    glLoadIdentity();
+    // Перевод из нормализованных координат (-1, 1) в экранные
+    float screenX = (transformed.x + 1) * width / 2.0f;
+    float screenY = (-transformed.y + 1) * height / 2.0f;
     
-    if (perspectiveProjection) {
-        gluLookAt(3.0, 3.0, 3.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0);
-    } else {
-        // Аксонометрическая проекция
-        glRotatef(35.264, 1.0, 0.0, 0.0); // Изометрическая
-        glRotatef(45.0, 0.0, 1.0, 0.0);
-    }
-    
-    glRotatef(rotationX, 1.0f, 0.0f, 0.0f);
-    glRotatef(rotationY, 0.0f, 1.0f, 0.0f);
-    
-    // Рисуем оси координат
-    glBegin(GL_LINES);
-    glColor3f(1.0f, 0.0f, 0.0f);
-    glVertex3f(0.0f, 0.0f, 0.0f); glVertex3f(2.0f, 0.0f, 0.0f);
-    glColor3f(0.0f, 1.0f, 0.0f);
-    glVertex3f(0.0f, 0.0f, 0.0f); glVertex3f(0.0f, 2.0f, 0.0f);
-    glColor3f(0.0f, 0.0f, 1.0f);
-    glVertex3f(0.0f, 0.0f, 0.0f); glVertex3f(0.0f, 0.0f, 2.0f);
-    glEnd();
-    
-    // Применяем текущее преобразование
-    Polyhedron transformedPoly = currentPolyhedron;
-    transformedPoly.transform(currentTransformation);
-    drawPolyhedron(transformedPoly);
-    
-    // Отладочная информация
-    glMatrixMode(GL_PROJECTION);
-    glPushMatrix();
-    glLoadIdentity();
-    gluOrtho2D(0, 800, 0, 600);
-    glMatrixMode(GL_MODELVIEW);
-    glPushMatrix();
-    glLoadIdentity();
-    
-    glColor3f(1.0, 1.0, 1.0);
-    drawText(10, 580, "Lab 6: 3D Transformations");
-    drawText(10, 560, (std::string("Mode: ") + currentMode).c_str());
-    drawText(10, 540, (std::string("Projection: ") + (perspectiveProjection ? "Perspective" : "Axonometric")).c_str());
-    
-    glPopMatrix();
-    glMatrixMode(GL_PROJECTION);
-    glPopMatrix();
-    glMatrixMode(GL_MODELVIEW);
-    
-    glutSwapBuffers();
-}
-
-void reshape(int width, int height) {
-    glViewport(0, 0, width, height);
-    glMatrixMode(GL_PROJECTION);
-    glLoadIdentity();
-    
-    if (perspectiveProjection) {
-        gluPerspective(45.0, (double)width / height, 1.0, 10.0);
-    } else {
-        glOrtho(-2.0, 2.0, -2.0, 2.0, -10.0, 10.0);
-    }
-    
-    glMatrixMode(GL_MODELVIEW);
-}
-
-void applyTransformation(const Matrix4x4& transformation) {
-    currentTransformation = transformation * currentTransformation;
-    glutPostRedisplay();
-}
-
-void keyboard(unsigned char key, int x, int y) {
-    switch (key) {
-        // Выбор фигур
-        case '1': currentPolyhedron = createHexahedron(); break;
-        case '2': currentPolyhedron = createIcosahedron(); break;
-        
-        // Аффинные преобразования
-        case 't': applyTransformation(createTranslationMatrix(0.5, 0, 0)); break;
-        case 'T': applyTransformation(createTranslationMatrix(-0.5, 0, 0)); break;
-        case 's': applyTransformation(createScaleMatrix(1.2, 1.2, 1.2)); break;
-        case 'S': applyTransformation(createScaleMatrix(0.8, 0.8, 0.8)); break;
-        case 'x': applyTransformation(createRotationXMatrix(15)); break;
-        case 'X': applyTransformation(createRotationXMatrix(-15)); break;
-        case 'y': applyTransformation(createRotationYMatrix(15)); break;
-        case 'Y': applyTransformation(createRotationYMatrix(-15)); break;
-        case 'z': applyTransformation(createRotationZMatrix(15)); break;
-        case 'Z': applyTransformation(createRotationZMatrix(-15)); break;
-        case 'a': {
-            Point3D p1(1, 1, 1);
-            Point3D p2(-1, -1, -1);
-            applyTransformation(createArbitraryRotationMatrix(p1, p2, 15.0));
-            break;
-        }
-        case 'A': {
-            Point3D p1(1, 1, 1);
-            Point3D p2(-1, -1, -1);
-            applyTransformation(createArbitraryRotationMatrix(p1, p2, -15.0));
-            break;
-        }
-        
-        // Отражение
-        case 'm': applyTransformation(createReflectionMatrix('X')); break;
-        case 'n': applyTransformation(createReflectionMatrix('Y')); break;
-        case 'b': applyTransformation(createReflectionMatrix('Z')); break;
-        
-        // Масштабирование относительно центра
-        case 'c': {
-            Point3D center = currentPolyhedron.getCenter();
-            applyTransformation(createTranslationMatrix(-center.x, -center.y, -center.z));
-            applyTransformation(createScaleMatrix(1.5, 1.5, 1.5));
-            applyTransformation(createTranslationMatrix(center.x, center.y, center.z));
-            break;
-        }
-        case 'C': {
-            Point3D center = currentPolyhedron.getCenter();
-            applyTransformation(createTranslationMatrix(-center.x, -center.y, -center.z));
-            applyTransformation(createScaleMatrix(0.7, 0.7, 0.7));
-            applyTransformation(createTranslationMatrix(center.x, center.y, center.z));
-            break;
-        }
-        
-        // Проекции
-        case 'p': 
-            perspectiveProjection = !perspectiveProjection; 
-            reshape(glutGet(GLUT_WINDOW_WIDTH), glutGet(GLUT_WINDOW_HEIGHT));
-            break;
-        
-        // Сброс
-        case 'r': 
-            rotationX = rotationY = 0.0f; 
-            currentTransformation.identity();
-            break;
-            
-        case 27: exit(0); break; // ESC
-    }
-    glutPostRedisplay();
-}
-
-void specialKeys(int key, int x, int y) {
-    switch (key) {
-        case GLUT_KEY_LEFT: rotationY -= 5.0f; break;
-        case GLUT_KEY_RIGHT: rotationY += 5.0f; break;
-        case GLUT_KEY_UP: rotationX -= 5.0f; break;
-        case GLUT_KEY_DOWN: rotationX += 5.0f; break;
-    }
-    glutPostRedisplay();
+    return sf::Vector2f(screenX, screenY);
 }
 
 void printInstructions() {
@@ -462,7 +312,7 @@ void printInstructions() {
     std::cout << "  t/T - смещение по X" << std::endl;
     std::cout << "  s/S - масштаб" << std::endl;
     std::cout << "  x/X, y/Y, z/Z - повороты" << std::endl;
-    std::cout << "  a/A - поворот вокруг произвольной оси" << std::endl; // *** НОВАЯ ИНСТРУКЦИЯ ***
+    std::cout << "  a/A - поворот вокруг произвольной оси" << std::endl;
     std::cout << "  m,n,b - отражения (X,Y,Z плоскости)" << std::endl;
     std::cout << "  c/C - масштаб от центра" << std::endl;
     std::cout << "  p - переключение проекций" << std::endl;
@@ -472,26 +322,157 @@ void printInstructions() {
     std::cout << "==================" << std::endl;
 }
 
-int main(int argc, char** argv) {
-    glutInit(&argc, argv);
-    glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH);
-    glutInitWindowSize(800, 600);
-    glutInitWindowPosition(100, 100);
-    glutCreateWindow("Lab 6 - 3D Transformations");
+int main() {
+    const int WIDTH = 800;
+    const int HEIGHT = 600;
+
+    sf::RenderWindow window(sf::VideoMode(WIDTH, HEIGHT), "Трехмерные преобразования");
+    window.setFramerateLimit(60);
     
-    glEnable(GL_DEPTH_TEST);
-    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-    
-    currentPolyhedron = createHexahedron();
-    currentTransformation.identity();
-    
+    Polyhedron currentPolyhedron = createHexahedron();
+    float rotationX = 20.0f;
+    float rotationY = -30.0f;
+    bool perspectiveProjection = true;
+    Matrix4x4 currentObjectTransformation;
+    currentObjectTransformation.identity();
+    std::string currentMode = "VIEW";
+
     printInstructions();
-    
-    glutDisplayFunc(display);
-    glutReshapeFunc(reshape);
-    glutKeyboardFunc(keyboard);
-    glutSpecialFunc(specialKeys);
-    
-    glutMainLoop();
+
+    while (window.isOpen()) {
+        sf::Event event;
+        while (window.pollEvent(event)) {
+            if (event.type == sf::Event::Closed) {
+                window.close();
+            }
+            if (event.type == sf::Event::KeyPressed) {
+                Matrix4x4 transformation;
+                transformation.identity();
+
+                switch (event.key.code) {
+                    case sf::Keyboard::Escape: window.close(); break;
+                    
+                    case sf::Keyboard::Num1: currentPolyhedron = createHexahedron(); break;
+                    case sf::Keyboard::Num2: currentPolyhedron = createIcosahedron(); break;
+                    
+                    case sf::Keyboard::T:
+                        transformation = event.key.shift ? createTranslationMatrix(-0.5, 0, 0) : createTranslationMatrix(0.5, 0, 0);
+                        break;
+                    case sf::Keyboard::S:
+                         transformation = event.key.shift ? createScaleMatrix(0.8, 0.8, 0.8) : createScaleMatrix(1.2, 1.2, 1.2);
+                        break;
+                    case sf::Keyboard::X:
+                        transformation = event.key.shift ? createRotationXMatrix(-15) : createRotationXMatrix(15);
+                        break;
+                    case sf::Keyboard::Y:
+                         transformation = event.key.shift ? createRotationYMatrix(-15) : createRotationYMatrix(15);
+                        break;
+                    case sf::Keyboard::Z:
+                        transformation = event.key.shift ? createRotationZMatrix(-15) : createRotationZMatrix(15);
+                        break;
+                    case sf::Keyboard::A: {
+                        Point3D p1(1, 1, 1), p2(-1, -1, -1);
+                        transformation = event.key.shift ? createArbitraryRotationMatrix(p1, p2, -15.0) : createArbitraryRotationMatrix(p1, p2, 15.0);
+                        break;
+                    }
+                    case sf::Keyboard::M: transformation = createReflectionMatrix('X'); break;
+                    case sf::Keyboard::N: transformation = createReflectionMatrix('Y'); break;
+                    case sf::Keyboard::B: transformation = createReflectionMatrix('Z'); break;
+                    
+                    case sf::Keyboard::C: {
+                        Point3D center = currentPolyhedron.getCenter();
+                        Matrix4x4 toOrigin = createTranslationMatrix(-center.x, -center.y, -center.z);
+                        Matrix4x4 scale = event.key.shift ? createScaleMatrix(0.7, 0.7, 0.7) : createScaleMatrix(1.5, 1.5, 1.5);
+                        Matrix4x4 fromOrigin = createTranslationMatrix(center.x, center.y, center.z);
+                        transformation = fromOrigin * scale * toOrigin;
+                        break;
+                    }
+                    
+                    case sf::Keyboard::P: perspectiveProjection = !perspectiveProjection; break;
+                    
+                    case sf::Keyboard::R: 
+                        rotationX = 20.0f; rotationY = -30.0f; 
+                        currentObjectTransformation.identity();
+                        break;
+
+                    case sf::Keyboard::Up: rotationX -= 5.0f; break;
+                    case sf::Keyboard::Down: rotationX += 5.0f; break;
+                    case sf::Keyboard::Left: rotationY -= 5.0f; break;
+                    case sf::Keyboard::Right: rotationY += 5.0f; break;
+
+                    default: break;
+                }
+                currentObjectTransformation = transformation * currentObjectTransformation;
+            }
+        }
+
+        window.clear(sf::Color::Black);
+
+        // --- Этап 1: Создание матриц вида и проекции ---
+        Matrix4x4 viewMatrix, projMatrix;
+
+        // Матрица вида (камера)
+        Matrix4x4 rotX = createRotationXMatrix(rotationX);
+        Matrix4x4 rotY = createRotationYMatrix(rotationY);
+        Matrix4x4 viewTranslation = createTranslationMatrix(0, 0, -3); // Отодвигаем камеру назад
+        viewMatrix = viewTranslation * rotX * rotY;
+        
+        // Матрица проекции
+        if (perspectiveProjection) {
+            projMatrix = createPerspectiveMatrix(45.0, (double)WIDTH / HEIGHT, 0.1, 100.0);
+        } else {
+            projMatrix = createOrthographicMatrix(-2.0, 2.0, -2.0, 2.0, -10.0, 10.0);
+        }
+
+        // --- Этап 2: Отрисовка осей координат ---
+        {
+            std::vector<Point3D> axes_points = {
+                {0,0,0}, {2,0,0}, // X
+                {0,0,0}, {0,2,0}, // Y
+                {0,0,0}, {0,0,2}  // Z
+            };
+            std::vector<sf::Color> axes_colors = {sf::Color::Red, sf::Color::Green, sf::Color::Blue};
+
+            Matrix4x4 mvp = projMatrix * viewMatrix; // Для осей не применяем трансформацию объекта
+            
+            for(size_t i = 0; i < 3; ++i) {
+                sf::Vector2f p1 = project(axes_points[i*2], mvp, WIDTH, HEIGHT);
+                sf::Vector2f p2 = project(axes_points[i*2 + 1], mvp, WIDTH, HEIGHT);
+                sf::Vertex line[] = { sf::Vertex(p1, axes_colors[i]), sf::Vertex(p2, axes_colors[i]) };
+                window.draw(line, 2, sf::Lines);
+            }
+        }
+        
+        // --- Этап 3: Отрисовка многогранника ---
+        Matrix4x4 mvp = projMatrix * viewMatrix * currentObjectTransformation;
+
+        sf::Color colors[] = {
+            sf::Color::Red, sf::Color::Green, sf::Color::Blue,
+            sf::Color::Yellow, sf::Color::Magenta, sf::Color::Cyan,
+            {128, 128, 255}, {255, 128, 0}, {128, 255, 128}
+        };
+
+        for (size_t i = 0; i < currentPolyhedron.polygons.size(); i++) {
+            const Polygon& polygon = currentPolyhedron.polygons[i];
+            if (polygon.points.empty()) continue;
+
+            sf::VertexArray lines(sf::LineStrip);
+            sf::VertexArray points(sf::Points);
+            
+            for (const Point3D& point : polygon.points) {
+                sf::Vector2f screenPos = project(point, mvp, WIDTH, HEIGHT);
+                lines.append(sf::Vertex(screenPos, colors[i % 9]));
+                points.append(sf::Vertex(screenPos, colors[i % 9]));
+            }
+            // Замыкаем контур
+            lines.append(lines[0]);
+            
+            window.draw(lines);
+            window.draw(points);
+        }
+
+        window.display();
+    }
+
     return 0;
 }
