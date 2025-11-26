@@ -4,6 +4,7 @@
 #include "lib/math_3d.h"
 #include "lib/geometry.h"
 #include "lib/renderer.h"
+#include "lib/camera.h"
 
 void printInstructions() {
     std::cout << "=== Управление ===" << std::endl;
@@ -20,7 +21,8 @@ void printInstructions() {
     std::cout << "  L - загрузить модель из OBJ" << std::endl;
     std::cout << "  O - сохранить текущую модель в OBJ" << std::endl;
     std::cout << "  R - построить модель вращения гриба" << std::endl;
-    std::cout << "  F - отобразить функцию" << std::endl; 
+    std::cout << "  F - отобразить функцию" << std::endl;
+    std::cout << "  q/Q - отдалить/приблизить камеру" << std::endl;
     std::cout << "Стрелки - вращение камеры" << std::endl;
     std::cout << "ESC - выход" << std::endl;
     std::cout << "==================" << std::endl;
@@ -34,15 +36,14 @@ int main() {
     window.setFramerateLimit(60);
     
     Polyhedron currentPolyhedron = createHexahedron();
-    float rotationX = 20.0f;
-    float rotationY = -30.0f;
+    Camera camera(Point3D(0, 1, 5), Point3D(0, 0, 0));
     bool perspectiveProjection = true;
     Matrix4x4 currentObjectTransformation;
     currentObjectTransformation.identity();
     std::string currentMode = "VIEW";
 
     printInstructions();
-    Point3D viewDirection(0, 0, 1);  // смотрим вдоль -Z
+    Point3D viewDirection(0, 0, 1);
 
     while (window.isOpen()) {
         sf::Event event;
@@ -97,7 +98,7 @@ int main() {
                     
                     case sf::Keyboard::R: {
                         if (!event.key.shift) {
-                            rotationX = 20.0f; rotationY = -30.0f; 
+                            camera = Camera(Point3D(0, 1, 5), Point3D(0, 0, 0));
                             currentObjectTransformation.identity();
                         } else {
                             int n;
@@ -108,13 +109,13 @@ int main() {
                             std::cin >> axis;
 
                             std::vector<Point3D> profile = {
-                                {0.0, 0.0, 0.0},   // низ ножки
+                                {0.0, 0.0, 0.0},
                                 {0.1, 0.0, 0.0},
-                                {0.15, 0.4, 0.0},  // начало шляпки
+                                {0.15, 0.4, 0.0},
                                 {0.4, 0.45, 0.0},
                                 {0.5, 0.5, 0.0},
                                 {0.3, 0.55, 0.0},
-                                {0.0, 0.6, 0.0}    // верх шляпки
+                                {0.0, 0.6, 0.0}
                             };
 
                             currentPolyhedron = generateSurfaceOfRevolution(profile, axis, n);
@@ -154,10 +155,16 @@ int main() {
                         break;
                     }
 
-                    case sf::Keyboard::Up: rotationX -= 5.0f; break;
-                    case sf::Keyboard::Down: rotationX += 5.0f; break;
-                    case sf::Keyboard::Left: rotationY -= 5.0f; break;
-                    case sf::Keyboard::Right: rotationY += 5.0f; break;
+                    case sf::Keyboard::Up: camera.rotateAroundTarget(0, 5.0f); break;
+                    case sf::Keyboard::Down: camera.rotateAroundTarget(0, -5.0f); break;
+                    case sf::Keyboard::Left: camera.rotateAroundTarget(-5.0f, 0); break;
+                    case sf::Keyboard::Right: camera.rotateAroundTarget(5.0f, 0); break;
+
+                    case sf::Keyboard::Q: 
+                        camera.radius += event.key.shift ? -0.5f : 0.5f;
+                        if (camera.radius < 1.0f) camera.radius = 1.0f;
+                        camera.updatePosition();
+                        break;
 
                     case sf::Keyboard::L: {
                         std::string path;
@@ -186,30 +193,23 @@ int main() {
 
         window.clear(sf::Color::Black);
 
-        // --- создание матриц вида и проекции ---
         Matrix4x4 viewMatrix, projMatrix;
 
-        // Матрица вида (камера)
-        Matrix4x4 rotX = createRotationXMatrix(rotationX);
-        Matrix4x4 rotY = createRotationYMatrix(rotationY);
-        Matrix4x4 viewTranslation = createTranslationMatrix(0, 0, -3); // Отодвигаем камеру назад
-        viewMatrix = viewTranslation * rotX * rotY;
+        viewMatrix = camera.getViewMatrix(); // Model->World->View->Projection
         
-        // Матрица проекции
         if (perspectiveProjection) {
             projMatrix = createPerspectiveMatrix(45.0, (double)WIDTH / HEIGHT, 0.1, 100.0);
         } else {
             projMatrix = createAxonometricMatrix(-2.0, 2.0, -2.0, 2.0, -10.0, 10.0);
         }
 
-        // --- отрисовка осей координат ---
         {
             Matrix4x4 mvp = projMatrix * viewMatrix; 
 
             std::vector<Point3D> axes_points = {
-                {0,0,0}, {2,0,0}, // X
-                {0,0,0}, {0,2,0}, // Y
-                {0,0,0}, {0,0,2}  // Z
+                {0,0,0}, {2,0,0},
+                {0,0,0}, {0,2,0},
+                {0,0,0}, {0,0,2}
             };
             std::vector<sf::Color> axes_colors = {sf::Color::Red, sf::Color::Green, sf::Color::Blue};
             
@@ -221,9 +221,8 @@ int main() {
             }
         }
         
-        // --- отрисовка многогранника ---
         Polyhedron transformed = currentPolyhedron;
-        transformed.transform(currentObjectTransformation); // Локальные -> Мировые
+        transformed.transform(currentObjectTransformation);
         transformed.transform(viewMatrix);
 
         std::sort(transformed.polygons.begin(), transformed.polygons.end(), 
@@ -231,8 +230,6 @@ int main() {
                 double zA = 0, zB = 0;
                 for(const auto& p : a.points) zA += p.z;
                 for(const auto& p : b.points) zB += p.z;
-                // Сравниваем средние значения Z.
-                // Рисуем от меньшего Z (далекого) к большему Z (ближнему)
                 return (zA / a.points.size()) < (zB / b.points.size());
             });
 
@@ -264,7 +261,6 @@ int main() {
                 sf::Vector2f screenPos = project(point, projMatrix, WIDTH, HEIGHT);
                 lines.append(sf::Vertex(screenPos, colors[colorIndex % 9]));
             }
-            // Замыкание контура
             if (!polygon.points.empty()) {
                 sf::Vector2f screenPos = project(polygon.points[0], projMatrix, WIDTH, HEIGHT);
                 lines.append(sf::Vertex(screenPos, colors[colorIndex % 9]));
