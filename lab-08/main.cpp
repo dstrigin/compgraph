@@ -5,10 +5,11 @@
 #include "lib/geometry.h"
 #include "lib/renderer.h"
 #include "lib/camera.h"
+#include "lib/zbuffer.h"
 
 void printInstructions() {
     std::cout << "=== Управление ===" << std::endl;
-    std::cout << "Фигуры: 1-Гексаэдр (куб), 2-Икосаэдр" << std::endl;
+    std::cout << "Фигуры: 1-Гексаэдр (куб), 2-Икосаэдр, 3-Сцена с объектами" << std::endl;
     std::cout << "Преобразования:" << std::endl;
     std::cout << "  t/T - смещение по X" << std::endl;
     std::cout << "  s/S - масштаб" << std::endl;
@@ -23,9 +24,47 @@ void printInstructions() {
     std::cout << "  R - построить модель вращения гриба" << std::endl;
     std::cout << "  F - отобразить функцию" << std::endl;
     std::cout << "  q/Q - отдалить/приблизить камеру" << std::endl;
+    std::cout << "  V - визуализация z-буфера" << std::endl;
+    std::cout << "  W - переключение режима отрисовки (линии/z-буфер)" << std::endl;
     std::cout << "Стрелки - вращение камеры" << std::endl;
     std::cout << "ESC - выход" << std::endl;
     std::cout << "==================" << std::endl;
+}
+
+struct SceneObject {
+    Polyhedron poly;
+    Matrix4x4 transform;
+    sf::Color color;
+};
+
+std::vector<SceneObject> createTestScene() {
+    std::vector<SceneObject> objects;
+    
+    SceneObject obj1;
+    obj1.poly = createHexahedron();
+    obj1.transform = createTranslationMatrix(-1.5, 0, 0) * createScaleMatrix(0.7, 0.7, 0.7);
+    obj1.color = sf::Color::Red;
+    objects.push_back(obj1);
+    
+    SceneObject obj2;
+    obj2.poly = createHexahedron();
+    obj2.transform = createTranslationMatrix(0, 0, -1.5) * createScaleMatrix(0.8, 0.8, 0.8);
+    obj2.color = sf::Color::Green;
+    objects.push_back(obj2);
+    
+    SceneObject obj3;
+    obj3.poly = createHexahedron();
+    obj3.transform = createTranslationMatrix(1.5, 0, 1.0) * createScaleMatrix(0.6, 0.6, 0.6);
+    obj3.color = sf::Color::Blue;
+    objects.push_back(obj3);
+    
+    SceneObject obj4;
+    obj4.poly = createIcosahedron();
+    obj4.transform = createTranslationMatrix(0, 1.5, 0.5) * createScaleMatrix(0.5, 0.5, 0.5);
+    obj4.color = sf::Color::Yellow;
+    objects.push_back(obj4);
+    
+    return objects;
 }
 
 int main() {
@@ -37,10 +76,19 @@ int main() {
     
     Polyhedron currentPolyhedron = createHexahedron();
     Camera camera(Point3D(0, 1, 5), Point3D(0, 0, 0));
+    ZBuffer zbuffer(WIDTH, HEIGHT);
+    
     bool perspectiveProjection = true;
+    bool useZBuffer = false;
+    bool backfaceCulling = true;
+    bool showZBufferViz = false;
+    int sceneMode = 0;
+    
     Matrix4x4 currentObjectTransformation;
     currentObjectTransformation.identity();
     std::string currentMode = "VIEW";
+    
+    std::vector<SceneObject> scene;
 
     printInstructions();
     Point3D viewDirection(0, 0, 1);
@@ -58,8 +106,19 @@ int main() {
                 switch (event.key.code) {
                     case sf::Keyboard::Escape: window.close(); break;
                     
-                    case sf::Keyboard::Num1: currentPolyhedron = createHexahedron(); break;
-                    case sf::Keyboard::Num2: currentPolyhedron = createIcosahedron(); break;
+                    case sf::Keyboard::Num1: 
+                        currentPolyhedron = createHexahedron(); 
+                        sceneMode = 0;
+                        break;
+                    case sf::Keyboard::Num2: 
+                        currentPolyhedron = createIcosahedron(); 
+                        sceneMode = 0;
+                        break;
+                    case sf::Keyboard::Num3:
+                        scene = createTestScene();
+                        sceneMode = 1;
+                        std::cout << "Сцена с несколькими объектами загружена" << std::endl;
+                        break;
                     
                     case sf::Keyboard::T:
                         transformation = event.key.shift ? createTranslationMatrix(-0.5, 0, 0) : createTranslationMatrix(0.5, 0, 0);
@@ -83,7 +142,6 @@ int main() {
                     }
                     case sf::Keyboard::M: transformation = createReflectionMatrix('X'); break;
                     case sf::Keyboard::N: transformation = createReflectionMatrix('Y'); break;
-                    case sf::Keyboard::B: transformation = createReflectionMatrix('Z'); break;
                     
                     case sf::Keyboard::C: {
                         Point3D center = currentPolyhedron.getCenter();
@@ -95,6 +153,16 @@ int main() {
                     }
                     
                     case sf::Keyboard::P: perspectiveProjection = !perspectiveProjection; break;
+                    
+                    case sf::Keyboard::W:
+                        useZBuffer = !useZBuffer;
+                        std::cout << "Режим отрисовки: " << (useZBuffer ? "Z-Buffer" : "Линии") << std::endl;
+                        break;
+                    
+                    case sf::Keyboard::V:
+                        showZBufferViz = !showZBufferViz;
+                        std::cout << "Z-buffer visualization: " << (showZBufferViz ? "ON" : "OFF") << std::endl;
+                        break;
                     
                     case sf::Keyboard::R: {
                         if (!event.key.shift) {
@@ -119,6 +187,7 @@ int main() {
                             };
 
                             currentPolyhedron = generateSurfaceOfRevolution(profile, axis, n);
+                            sceneMode = 0;
                             break;
                         }
                         break;
@@ -152,6 +221,7 @@ int main() {
                         }
 
                         currentPolyhedron = generateFunctionSurface(func, x0, x1, y0, y1, steps);
+                        sceneMode = 0;
                         break;
                     }
 
@@ -171,6 +241,7 @@ int main() {
                         std::cout << "Введите имя файла OBJ для загрузки: ";
                         std::cin >> path;
                         currentPolyhedron = loadOBJ(path);
+                        sceneMode = 0;
                         break;
                     }
                     case sf::Keyboard::O: {
@@ -195,7 +266,7 @@ int main() {
 
         Matrix4x4 viewMatrix, projMatrix;
 
-        viewMatrix = camera.getViewMatrix(); // Model->World->View->Projection
+        viewMatrix = camera.getViewMatrix();
         
         if (perspectiveProjection) {
             projMatrix = createPerspectiveMatrix(45.0, (double)WIDTH / HEIGHT, 0.1, 100.0);
@@ -203,75 +274,144 @@ int main() {
             projMatrix = createAxonometricMatrix(-2.0, 2.0, -2.0, 2.0, -10.0, 10.0);
         }
 
-        {
-            Matrix4x4 mvp = projMatrix * viewMatrix; 
-
-            std::vector<Point3D> axes_points = {
-                {0,0,0}, {2,0,0},
-                {0,0,0}, {0,2,0},
-                {0,0,0}, {0,0,2}
-            };
-            std::vector<sf::Color> axes_colors = {sf::Color::Red, sf::Color::Green, sf::Color::Blue};
+        if (useZBuffer) {
+            zbuffer.clear();
             
-            for(size_t i = 0; i < 3; ++i) {
-                sf::Vector2f p1 = project(axes_points[i*2], mvp, WIDTH, HEIGHT);
-                sf::Vector2f p2 = project(axes_points[i*2 + 1], mvp, WIDTH, HEIGHT);
-                sf::Vertex line[] = { sf::Vertex(p1, axes_colors[i]), sf::Vertex(p2, axes_colors[i]) };
-                window.draw(line, 2, sf::Lines);
-            }
-        }
-        
-        Polyhedron transformed = currentPolyhedron;
-        transformed.transform(currentObjectTransformation);
-        transformed.transform(viewMatrix);
-
-        std::sort(transformed.polygons.begin(), transformed.polygons.end(), 
-            [](const Polygon& a, const Polygon& b) {
-                double zA = 0, zB = 0;
-                for(const auto& p : a.points) zA += p.z;
-                for(const auto& p : b.points) zB += p.z;
-                return (zA / a.points.size()) < (zB / b.points.size());
-            });
-
-        sf::Color colors[] = {
-            sf::Color::Red, sf::Color::Green, sf::Color::Blue,
-            sf::Color::Yellow, sf::Color::Magenta, sf::Color::Cyan,
-            {128, 128, 255}, {255, 128, 0}, {128, 255, 128}
-        };
-
-        int colorIndex = 0;
-        for (const Polygon& polygon : transformed.polygons) {
-            if (polygon.points.empty()) continue;
-
-            Point3D normal = polygon.getNormal();
-            
-            Point3D center(0,0,0);
-            for(const auto& p : polygon.points) center = center + p;
-            center = center * (1.0 / polygon.points.size());
-            
-            Point3D viewDir = (Point3D(0,0,0) - center).normalize();
-
-            double dotVal = normal.dot(viewDir);
-
-            if (dotVal <= 0) continue; 
-
-            sf::VertexArray lines(sf::LineStrip);
-            
-            for (const Point3D& point : polygon.points) {
-                sf::Vector2f screenPos = project(point, projMatrix, WIDTH, HEIGHT);
-                lines.append(sf::Vertex(screenPos, colors[colorIndex % 9]));
-            }
-            if (!polygon.points.empty()) {
-                sf::Vector2f screenPos = project(polygon.points[0], projMatrix, WIDTH, HEIGHT);
-                lines.append(sf::Vertex(screenPos, colors[colorIndex % 9]));
+            if (sceneMode == 1) {
+                for (auto& obj : scene) {
+                    Matrix4x4 modelMatrix = currentObjectTransformation * obj.transform;
+                    Matrix4x4 mvp = projMatrix * viewMatrix * modelMatrix;
+                    
+                    for (const auto& polygon : obj.poly.polygons) {
+                        zbuffer.rasterizePolygon(polygon, obj.color, mvp, backfaceCulling);
+                    }
+                }
+            } else {
+                Matrix4x4 mvp = projMatrix * viewMatrix * currentObjectTransformation;
+                
+                sf::Color colors[] = {
+                    sf::Color::Red, sf::Color::Green, sf::Color::Blue,
+                    sf::Color::Yellow, sf::Color::Magenta, sf::Color::Cyan,
+                    {128, 128, 255}, {255, 128, 0}, {128, 255, 128}
+                };
+                
+                int colorIndex = 0;
+                for (const auto& polygon : currentPolyhedron.polygons) {
+                    zbuffer.rasterizePolygon(polygon, colors[colorIndex % 9], mvp, backfaceCulling);
+                    colorIndex++;
+                }
             }
             
-            window.draw(lines);
-            colorIndex++;
+            const sf::Image& frameImage = showZBufferViz ? zbuffer.getZBufferVisualization() : zbuffer.getFrameBuffer();
+            sf::Texture texture;
+            texture.loadFromImage(frameImage);
+            sf::Sprite sprite(texture);
+            window.draw(sprite);
+            
+        } else {
+            {
+                Matrix4x4 mvp = projMatrix * viewMatrix; 
+
+                std::vector<Point3D> axes_points = {
+                    {0,0,0}, {2,0,0},
+                    {0,0,0}, {0,2,0},
+                    {0,0,0}, {0,0,2}
+                };
+                std::vector<sf::Color> axes_colors = {sf::Color::Red, sf::Color::Green, sf::Color::Blue};
+                
+                for(size_t i = 0; i < 3; ++i) {
+                    sf::Vector2f p1 = project(axes_points[i*2], mvp, WIDTH, HEIGHT);
+                    sf::Vector2f p2 = project(axes_points[i*2 + 1], mvp, WIDTH, HEIGHT);
+                    sf::Vertex line[] = { sf::Vertex(p1, axes_colors[i]), sf::Vertex(p2, axes_colors[i]) };
+                    window.draw(line, 2, sf::Lines);
+                }
+            }
+            
+            if (sceneMode == 1) {
+                for (auto& obj : scene) {
+                    Polyhedron transformed = obj.poly;
+                    Matrix4x4 modelMatrix = currentObjectTransformation * obj.transform;
+                    transformed.transform(modelMatrix);
+                    transformed.transform(viewMatrix);
+
+                    for (const Polygon& polygon : transformed.polygons) {
+                        if (polygon.points.empty()) continue;
+
+                        Point3D normal = polygon.getNormal();
+                        Point3D center(0,0,0);
+                        for(const auto& p : polygon.points) center = center + p;
+                        center = center * (1.0 / polygon.points.size());
+                        Point3D viewDir = (Point3D(0,0,0) - center).normalize();
+                        double dotVal = normal.dot(viewDir);
+                        if (dotVal <= 0) continue;
+
+                        sf::VertexArray lines(sf::LineStrip);
+                        for (const Point3D& point : polygon.points) {
+                            sf::Vector2f screenPos = project(point, projMatrix, WIDTH, HEIGHT);
+                            lines.append(sf::Vertex(screenPos, obj.color));
+                        }
+                        if (!polygon.points.empty()) {
+                            sf::Vector2f screenPos = project(polygon.points[0], projMatrix, WIDTH, HEIGHT);
+                            lines.append(sf::Vertex(screenPos, obj.color));
+                        }
+                        window.draw(lines);
+                    }
+                }
+            } else {
+                Polyhedron transformed = currentPolyhedron;
+                transformed.transform(currentObjectTransformation);
+                transformed.transform(viewMatrix);
+
+                std::sort(transformed.polygons.begin(), transformed.polygons.end(), 
+                    [](const Polygon& a, const Polygon& b) {
+                        double zA = 0, zB = 0;
+                        for(const auto& p : a.points) zA += p.z;
+                        for(const auto& p : b.points) zB += p.z;
+                        return (zA / a.points.size()) < (zB / b.points.size());
+                    });
+
+                sf::Color colors[] = {
+                    sf::Color::Red, sf::Color::Green, sf::Color::Blue,
+                    sf::Color::Yellow, sf::Color::Magenta, sf::Color::Cyan,
+                    {128, 128, 255}, {255, 128, 0}, {128, 255, 128}
+                };
+
+                int colorIndex = 0;
+                for (const Polygon& polygon : transformed.polygons) {
+                    if (polygon.points.empty()) continue;
+
+                    Point3D normal = polygon.getNormal();
+                    
+                    Point3D center(0,0,0);
+                    for(const auto& p : polygon.points) center = center + p;
+                    center = center * (1.0 / polygon.points.size());
+                    
+                    Point3D viewDir = (Point3D(0,0,0) - center).normalize();
+
+                    double dotVal = normal.dot(viewDir);
+
+                    if (dotVal <= 0) continue; 
+
+                    sf::VertexArray lines(sf::LineStrip);
+                    
+                    for (const Point3D& point : polygon.points) {
+                        sf::Vector2f screenPos = project(point, projMatrix, WIDTH, HEIGHT);
+                        lines.append(sf::Vertex(screenPos, colors[colorIndex % 9]));
+                    }
+                    if (!polygon.points.empty()) {
+                        sf::Vector2f screenPos = project(polygon.points[0], projMatrix, WIDTH, HEIGHT);
+                        lines.append(sf::Vertex(screenPos, colors[colorIndex % 9]));
+                    }
+                    
+                    window.draw(lines);
+                    colorIndex++;
+                }
+            }
         }
 
         window.display();
     }
+    
 
     return 0;
 }
