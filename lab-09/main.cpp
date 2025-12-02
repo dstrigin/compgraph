@@ -1,6 +1,7 @@
 #include <SFML/Graphics.hpp>
 #include <iostream>
 #include <vector>
+#include <map>
 #include "lib/math_3d.h"
 #include "lib/geometry.h"
 #include "lib/renderer.h"
@@ -9,7 +10,8 @@
 
 void printInstructions() {
     std::cout << "=== Управление ===" << std::endl;
-    std::cout << "Фигуры: 1-Гексаэдр (куб), 2-Икосаэдр, 3-Сцена с объектами" << std::endl;
+    std::cout << "Фигуры: 1-Гексаэдр (куб), 2-Икосаэдр, 3-Тетраэдр, 4-Октаэдр, 5-Сцена" << std::endl;
+    std::cout << "Режимы: 6-Гуро, 7-Фонг/Тун, 8-Плоское, 9-Текстурирование" << std::endl;
     std::cout << "Преобразования:" << std::endl;
     std::cout << "  t/T - смещение по X" << std::endl;
     std::cout << "  s/S - масштаб" << std::endl;
@@ -26,7 +28,7 @@ void printInstructions() {
     std::cout << "  q/Q - отдалить/приблизить камеру" << std::endl;
     std::cout << "  V - визуализация z-буфера" << std::endl;
     std::cout << "  W - переключение режима отрисовки (линии/z-буфер)" << std::endl;
-    std::cout << "  4/5/6 - Режимы: Гуро(4), Фонг/Тун(5), Обычный(6)" << std::endl;
+    std::cout << "  B - переключение текстуры (1.jpg/2.jpg)" << std::endl;
     std::cout << "Стрелки - вращение камеры" << std::endl;
     std::cout << "ESC - выход" << std::endl;
     std::cout << "==================" << std::endl;
@@ -72,7 +74,7 @@ int main() {
     const int WIDTH = 800;
     const int HEIGHT = 600;
 
-    sf::RenderWindow window(sf::VideoMode(WIDTH, HEIGHT), "Трехмерные преобразования");
+    sf::RenderWindow window(sf::VideoMode(WIDTH, HEIGHT), "Освещение и Текстурирование");
     window.setFramerateLimit(60);
     
     Polyhedron currentPolyhedron = createHexahedron();
@@ -80,11 +82,11 @@ int main() {
     ZBuffer zbuffer(WIDTH, HEIGHT);
 
     Light mainLight;
-    mainLight.position = Point3D(5, 5, 5); // Источник света
+    mainLight.position = Point3D(5, 5, 5);
     mainLight.color = sf::Color::White;
     mainLight.intensity = 1.0f;
 
-    enum RenderMode { GOURAUD, PHONG_TOON, FLAT, SCENE };
+    enum RenderMode { GOURAUD, PHONG_TOON, FLAT, TEXTURED, SCENE };
     RenderMode renderMode = FLAT;
     
     bool perspectiveProjection = true;
@@ -95,9 +97,21 @@ int main() {
     
     Matrix4x4 currentObjectTransformation;
     currentObjectTransformation.identity();
-    std::string currentMode = "VIEW";
     
     std::vector<SceneObject> scene;
+    
+    Texture texture1, texture2;
+    Texture* currentTexture = &texture1;
+    bool textureLoaded1 = texture1.loadFromFile("assets/textures/1.jpg");
+    bool textureLoaded2 = texture2.loadFromFile("assets/textures/2.jpg");
+    
+    if (!textureLoaded1 && !textureLoaded2) {
+        std::cout << "Предупреждение: не удалось загрузить текстуры!" << std::endl;
+    } else {
+        zbuffer.setTexture(currentTexture);
+        std::cout << "Текстуры загружены: 1.jpg=" << textureLoaded1 
+                  << ", 2.jpg=" << textureLoaded2 << std::endl;
+    }
 
     printInstructions();
     Point3D viewDirection(0, 0, 1);
@@ -118,31 +132,48 @@ int main() {
                     case sf::Keyboard::Num1: 
                         currentPolyhedron = createHexahedron(); 
                         sceneMode = 0;
+                        std::cout << "Куб" << std::endl;
                         break;
                     case sf::Keyboard::Num2: 
                         currentPolyhedron = createIcosahedron(); 
                         sceneMode = 0;
+                        std::cout << "Икосаэдр" << std::endl;
                         break;
                     case sf::Keyboard::Num3:
+                        currentPolyhedron = createTetrahedron();
+                        sceneMode = 0;
+                        std::cout << "Тетраэдр" << std::endl;
+                        break;
+                    case sf::Keyboard::Num4:
+                        currentPolyhedron = createOctahedron();
+                        sceneMode = 0;
+                        std::cout << "Октаэдр" << std::endl;
+                        break;
+                    case sf::Keyboard::Num5:
                         scene = createTestScene();
                         sceneMode = 1;
-                        std::cout << "Сцена с несколькими объектами загружена" << std::endl;
+                        std::cout << "Сцена с несколькими объектами" << std::endl;
                         break;
 
-                    case sf::Keyboard::Num4: 
+                    case sf::Keyboard::Num6: 
                         renderMode = GOURAUD; 
                         std::cout << "Режим: Гуро (Lambert)" << std::endl;
                         useZBuffer = true;
                         break;
-                    case sf::Keyboard::Num5: 
+                    case sf::Keyboard::Num7: 
                         renderMode = PHONG_TOON;
                         std::cout << "Режим: Фонг (Toon)" << std::endl;
                         useZBuffer = true;
                         break;
-                    case sf::Keyboard::Num6: 
+                    case sf::Keyboard::Num8: 
                         renderMode = FLAT;
                         std::cout << "Режим: Плоская заливка" << std::endl;
                         sceneMode = 0;
+                        break;
+                    case sf::Keyboard::Num9:
+                        renderMode = TEXTURED;
+                        std::cout << "Режим: Текстурирование" << std::endl;
+                        useZBuffer = true;
                         break;
                     
                     case sf::Keyboard::T:
@@ -177,7 +208,10 @@ int main() {
                         break;
                     }
                     
-                    case sf::Keyboard::P: perspectiveProjection = !perspectiveProjection; break;
+                    case sf::Keyboard::P: 
+                        perspectiveProjection = !perspectiveProjection; 
+                        std::cout << "Проекция: " << (perspectiveProjection ? "Перспективная" : "Аксонометрическая") << std::endl;
+                        break;
                     
                     case sf::Keyboard::W:
                         useZBuffer = !useZBuffer;
@@ -189,10 +223,22 @@ int main() {
                         std::cout << "Z-buffer visualization: " << (showZBufferViz ? "ON" : "OFF") << std::endl;
                         break;
                     
+                    case sf::Keyboard::B:
+                        if (currentTexture == &texture1 && textureLoaded2) {
+                            currentTexture = &texture2;
+                            std::cout << "Текстура: 2.jpg" << std::endl;
+                        } else if (textureLoaded1) {
+                            currentTexture = &texture1;
+                            std::cout << "Текстура: 1.jpg" << std::endl;
+                        }
+                        zbuffer.setTexture(currentTexture);
+                        break;
+                    
                     case sf::Keyboard::R: {
                         if (!event.key.shift) {
                             camera = Camera(Point3D(0, 1, 5), Point3D(0, 0, 0));
                             currentObjectTransformation.identity();
+                            std::cout << "Сброс" << std::endl;
                         } else {
                             int n;
                             char axis;
@@ -303,11 +349,9 @@ int main() {
             zbuffer.clear();
             
             std::map<Point3D, Point3D> vertexNormals;
-            if (sceneMode == 0) {
+            if (sceneMode == 0 && (renderMode == GOURAUD || renderMode == PHONG_TOON)) {
                 vertexNormals = calculateSmoothNormals(currentPolyhedron);
             }
-
-            Matrix4x4 viewMatrix = camera.getViewMatrix();
 
             if (sceneMode == 1) {
                 for (auto& obj : scene) {
@@ -341,6 +385,19 @@ int main() {
                                     obj.color, mvp, modelMatrix, mainLight
                                 );
                             } 
+                            else if (renderMode == TEXTURED) {
+                                if (polygon.texCoords.size() >= 3) {
+                                    zbuffer.rasterizeTriangleWithTexture(
+                                        p1, p2, p3,
+                                        polygon.texCoords[0],
+                                        polygon.texCoords[i],
+                                        polygon.texCoords[i + 1],
+                                        mvp, backfaceCulling
+                                    );
+                                } else {
+                                    zbuffer.rasterizeTriangle(p1, p2, p3, obj.color, mvp, backfaceCulling);
+                                }
+                            }
                             else {
                                 zbuffer.rasterizeTriangle(p1, p2, p3, obj.color, mvp, backfaceCulling);
                             }
@@ -351,7 +408,8 @@ int main() {
                 Matrix4x4 modelMatrix = currentObjectTransformation;
                 Matrix4x4 mvp = projMatrix * viewMatrix * modelMatrix;
                 
-                sf::Color colors[] = { sf::Color::Red, sf::Color::Green, sf::Color::Blue, sf::Color::Yellow, sf::Color::Cyan, sf::Color::Magenta };
+                sf::Color colors[] = { sf::Color::Red, sf::Color::Green, sf::Color::Blue, 
+                                      sf::Color::Yellow, sf::Color::Cyan, sf::Color::Magenta };
                 int colorIdx = 0;
 
                 for (const auto& polygon : currentPolyhedron.polygons) {
@@ -379,6 +437,19 @@ int main() {
                                 faceColor, mvp, modelMatrix, mainLight
                             );
                         } 
+                        else if (renderMode == TEXTURED) {
+                            if (polygon.texCoords.size() >= 3) {
+                                zbuffer.rasterizeTriangleWithTexture(
+                                    p1, p2, p3,
+                                    polygon.texCoords[0],
+                                    polygon.texCoords[i],
+                                    polygon.texCoords[i + 1],
+                                    mvp, backfaceCulling
+                                );
+                            } else {
+                                zbuffer.rasterizeTriangle(p1, p2, p3, faceColor, mvp, backfaceCulling);
+                            }
+                        }
                         else {
                             zbuffer.rasterizeTriangle(p1, p2, p3, faceColor, mvp, backfaceCulling);
                         }
@@ -474,7 +545,7 @@ int main() {
 
                     double dotVal = normal.dot(viewDir);
 
-                    if (dotVal <= 0) continue; 
+                    if (dotVal <= 0) continue;
 
                     sf::VertexArray lines(sf::LineStrip);
                     

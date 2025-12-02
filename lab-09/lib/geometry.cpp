@@ -4,6 +4,7 @@ void Polygon::transform(const Matrix4x4& matrix) {
     for (auto& point : points) {
         point = matrix.transform(point);
     }
+    // Текстурные координаты не трансформируются
 }
 
 Point3D Polygon::getNormal() const {
