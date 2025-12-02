@@ -82,7 +82,7 @@ int main() {
     ZBuffer zbuffer(WIDTH, HEIGHT);
 
     Light mainLight;
-    mainLight.position = Point3D(5, 5, 5);
+    mainLight.position = Point3D(5, 5, 5); // Источник света
     mainLight.color = sf::Color::White;
     mainLight.intensity = 1.0f;
 

@@ -129,6 +129,7 @@ Matrix4x4 createAxonometricMatrix(double left, double right, double bottom, doub
     return mat;
 }
 
+// Функции создания многогранников
 Polyhedron createHexahedron() {
     std::vector<Point3D> vertices = {
         Point3D(-0.7, -0.7, -0.7), Point3D(0.7, -0.7, -0.7), 
@@ -138,12 +139,12 @@ Polyhedron createHexahedron() {
     };
     
     std::vector<std::vector<int>> faces = {
-        {3, 2, 1, 0},
-        {4, 5, 6, 7},
-        {0, 1, 5, 4},
-        {2, 3, 7, 6},
-        {0, 4, 7, 3},
-        {1, 2, 6, 5}
+        {3, 2, 1, 0}, // Задняя (было 0,1,2,3 - смотрела внутрь)
+        {4, 5, 6, 7}, // Передняя
+        {0, 1, 5, 4}, // Нижняя
+        {2, 3, 7, 6}, // Верхняя
+        {0, 4, 7, 3}, // Левая (было 0,3,7,4 - смотрела внутрь)
+        {1, 2, 6, 5}  // Правая
     };
     
     std::vector<std::vector<Point3D>> texCoordsList = {
@@ -179,6 +180,7 @@ Polyhedron createIcosahedron() {
         Point3D(-a, 0, -b), Point3D(b, -a, 0), Point3D(-b, -a, 0)
     };
     
+    // Масштабируем для лучшего отображения
     for (auto& v : vertices) {
         v = v * 0.5;
     }
@@ -280,11 +282,14 @@ sf::Vector2f project(Point3D point, const Matrix4x4& mvp, int width, int height)
         transformed.y /= transformed.w;
     }
 
+    // Перевод из нормализованных координат (-1, 1) в экранные
     float screenX = (transformed.x + 1) * width / 2.0f;
     float screenY = (-transformed.y + 1) * height / 2.0f;
     
     return sf::Vector2f(screenX, screenY);
 }
+
+// lab 07
 
 Polyhedron loadOBJ(const std::string& filename) {
     std::ifstream file(filename);
@@ -412,7 +417,7 @@ Polyhedron generateSurfaceOfRevolution(
             } else if (axis == 'x' || axis == 'X') {
                 p1 = Point3D(p.z * sin(theta1), p.y * cos(theta1), p.z * cos(theta1));
                 p2 = Point3D(p.z * sin(theta2), p.y * cos(theta2), p.z * cos(theta2));
-            } else {
+            } else { // ось Z
                 p1 = Point3D(x * cos(theta1) - y * sin(theta1), x * sin(theta1) + y * cos(theta1), z);
                 p2 = Point3D(x * cos(theta2) - y * sin(theta2), x * sin(theta2) + y * cos(theta2), z);
             }

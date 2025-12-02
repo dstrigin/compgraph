@@ -32,7 +32,7 @@ public:
 struct Light {
     Point3D position;
     sf::Color color;
-    float intensity;
+    float intensity; // 0.0 - 1.0
 };
 
 struct Texture {
@@ -65,6 +65,8 @@ struct Texture {
     }
 };
 
+// Функция для сглаживания нормалей (для Гуро и Фонга)
+// Возвращает мапу [Вершина] -> Усредненная нормаль
 std::map<Point3D, Point3D> calculateSmoothNormals(const Polyhedron& poly);
 
 #endif
