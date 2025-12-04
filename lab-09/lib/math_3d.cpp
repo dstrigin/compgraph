@@ -27,7 +27,7 @@ Point3D Point3D::cross(const Point3D& other) const {
         y * other.z - z * other.y,
         z * other.x - x * other.z,
         x * other.y - y * other.x,
-        0 // w для вектора направления обычно 0, но здесь оставим 0 для безопасности
+        0 // w для вектора направления
     );
 }
 

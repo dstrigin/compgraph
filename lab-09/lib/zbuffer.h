@@ -335,16 +335,16 @@ public:
                         Point3D lightDir = (light.position - pixelWorldPos).normalize();
                         
                         float diff = 0.2f + std::max(0.0, pixelNormal.dot(lightDir));
-                        
-                        float intensityFactor = 1.0f;
+                        float intensityFactor = diff;
+                        // float intensityFactor = 1.0f;
 
-                        if (diff < 0.4f) {
-                            intensityFactor = 0.3f; // Тень
-                        } else if (diff < 0.7f) {
-                            intensityFactor = 1.0f; // Основной цвет
-                        } else {
-                            intensityFactor = 1.3f; // Блик (Specular имитация)
-                        }
+                        // if (diff < 0.4f) {
+                        //     intensityFactor = diff * 0.3f; // Тень
+                        // } else if (diff < 0.7f) {
+                        //     intensityFactor = diff * 1.0f; // Основной цвет
+                        // } else {
+                        //     intensityFactor = diff * 1.3f; // Блик (Specular имитация)
+                        // }
                         
                         // Применяем результат
                         sf::Uint8 r = (sf::Uint8)std::min(255.0f, color.r * intensityFactor * light.intensity);
