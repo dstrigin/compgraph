@@ -11,6 +11,8 @@ GLint Attrib_vertex;
 // ID Vertex Buffer Object
 GLuint VBO;
 
+GLint Unif_color;
+
 struct Vertex {
     GLfloat x;
     GLfloat y;
@@ -31,6 +33,15 @@ const char* FragShaderSource = R"(
 out vec4 color;
 void main() {
     color = vec4(0.1, 0.5, 0.6, 1);
+}
+)";
+
+const char* FragShaderUniformColorSource = R"(
+#version 330 core
+uniform vec4 u_color;
+out vec4 color;
+void main() {
+    color = u_color;
 }
 )";
 
@@ -97,43 +108,27 @@ void ShaderLog(unsigned int shader)
 }
 
 void InitShader() {
-    // Создаем вершинный шейдер
     GLuint vShader = glCreateShader(GL_VERTEX_SHADER);
-    // Передаем исходный код
     glShaderSource(vShader, 1, &VertexShaderSource, NULL);
-    // Компилируем шейдер
     glCompileShader(vShader);
-    std::cout << "vertex shader \n";
-    // Функция печати лога шейдера
-    ShaderLog(vShader); //Пример функции есть в лабораторной
     checkOpenGLerror();
 
-    // Создаем фрагментный шейдер
     GLuint fShader = glCreateShader(GL_FRAGMENT_SHADER);
-    // Передаем исходный код
     glShaderSource(fShader, 1, &FragShaderSource, NULL);
-    // Компилируем шейдер
     glCompileShader(fShader);
-    std::cout << "fragment shader \n";
-    // Функция печати лога шейдера
-    ShaderLog(fShader);
     checkOpenGLerror();
 
-    // Создаем программу и прикрепляем шейдеры к ней
     Program = glCreateProgram();
     glAttachShader(Program, vShader);
     glAttachShader(Program, fShader);
-    // Линкуем шейдерную программу
     glLinkProgram(Program);
-    // Проверяем статус сборки
     int link_ok;
     glGetProgramiv(Program, GL_LINK_STATUS, &link_ok);
     if (!link_ok) {
         std::cout << "error attach shaders \n";
         return;
     }
-    // Вытягиваем ID атрибута из собранной программы
-    const char* attr_name = "coord"; //имя в шейдере
+    const char* attr_name = "coord";
     Attrib_vertex = glGetAttribLocation(Program, attr_name);
     if (Attrib_vertex == -1) {
         std::cout << "could not bind attrib " << attr_name << std::endl;
@@ -142,18 +137,71 @@ void InitShader() {
     checkOpenGLerror();
 }
 
-void InitDiamond() {
-    InitShader();
+void InitUniformShader(float r, float g, float b) {
+    GLuint vShader = glCreateShader(GL_VERTEX_SHADER);
+    glShaderSource(vShader, 1, &VertexShaderSource, NULL);
+    glCompileShader(vShader);
+    checkOpenGLerror();
+
+    GLuint fShader = glCreateShader(GL_FRAGMENT_SHADER);
+    glShaderSource(fShader, 1, &FragShaderUniformColorSource, NULL);
+    glCompileShader(fShader);
+    checkOpenGLerror();
+
+    Program = glCreateProgram();
+    glAttachShader(Program, vShader);
+    glAttachShader(Program, fShader);
+    glLinkProgram(Program);
+    int link_ok;
+    glGetProgramiv(Program, GL_LINK_STATUS, &link_ok);
+    if (!link_ok) {
+        std::cout << "error attach shaders \n";
+        return;
+    }
+    const char* attr_name = "coord";
+    Attrib_vertex = glGetAttribLocation(Program, attr_name);
+    if (Attrib_vertex == -1) {
+        std::cout << "could not bind attrib " << attr_name << std::endl;
+        return;
+    }
+
+    const char* unif_name = "u_color";
+    Unif_color = glGetUniformLocation(Program, unif_name);
+    if (Unif_color == -1) {
+        std::cerr << "unable to bind uniform! error" << std::endl;
+        return;
+    }
+
+    glUseProgram(Program);
+    glUniform4f(Unif_color, r, g, b, 1.0f);
+
+    checkOpenGLerror();
+}
+
+void InitDiamond(bool use_uniform = false) {
+    if (use_uniform) {
+        InitUniformShader(1.0f, 0.0f, 0.0f);
+    } else {
+        InitShader();
+    }
     InitVBODiamond();
 }
 
-void InitFan() {
-    InitShader();
+void InitFan(bool use_uniform = false) {
+    if (use_uniform) {
+        InitUniformShader(0.0f, 1.0f, 0.0f);
+    } else {
+        InitShader();
+    }
     InitVBOFan();
 }
 
-void InitPentagon() {
-    InitShader();
+void InitPentagon(bool use_uniform = false) {
+    if (use_uniform) {
+        InitUniformShader(0.0f, 0.0f, 1.0f);
+    } else {
+        InitShader();
+    }
     InitVBOPentagon();
 }
 
@@ -217,6 +265,15 @@ void Release() {
     ReleaseVBO();
 }
 
+void print_options() {
+    std::cout << "Клавиши" << std::endl;
+    std::cout << "1. A - нарисовать четырехугольник" << std::endl;
+    std::cout << "2. S - нарисовать веер" << std::endl;
+    std::cout << "3. D - нарисовать пятиугольник" << std::endl;
+    std::cout << "4. U - переключить режим передачи цвета (хардкод / uniform)" << std::endl;
+    std::cout << "5. F - включить / отключить градиентную заливку" << std::endl;
+}
+
 int main() {
     sf::Window window(sf::VideoMode(600, 600), "My OpenGL window", sf::Style::Default, sf::ContextSettings(24));
     window.setVerticalSyncEnabled(true);
@@ -224,7 +281,9 @@ int main() {
     glewInit();
     
     Figure curr_figure = Figure::DIAMOND;
-    InitDiamond(); 
+    InitDiamond();
+
+    bool use_unif = false;
 
     while (window.isOpen()) {
         sf::Event event;
@@ -237,21 +296,22 @@ int main() {
             if (event.type == sf::Event::KeyPressed) {
                 switch (event.key.code) {
                     case sf::Keyboard::Escape: window.close(); break;
+                    case sf::Keyboard::U: use_unif = !use_unif; break;
                     case sf::Keyboard::A: 
                         Release();
-                        InitDiamond();
+                        InitDiamond(use_unif);
                         curr_figure = Figure::DIAMOND;    
                         break;
                         
                     case sf::Keyboard::S: 
                         Release();
-                        InitFan();
+                        InitFan(use_unif);
                         curr_figure = Figure::FAN;     
                         break;
                         
                     case sf::Keyboard::D: 
                         Release();
-                        InitPentagon();
+                        InitPentagon(use_unif);
                         curr_figure = Figure::PENTAGON;   
                         break;
                 }
