@@ -112,7 +112,7 @@ void Tetrahedron_InitShader() {
     checkOpenGLerror();
 }
 
-// Создание вершин тетраэдра с улучшенными градиентами (как у ребят)
+// Создание вершин тетраэдра с улучшенными градиентами
 std::vector<Vertex3DWithColor> createTetrahedron() {
     std::vector<Vertex3DWithColor> vertices;
     float h = 0.8f;  // высота тетраэдра
@@ -265,7 +265,7 @@ struct CubeVertexWithColor {
     GLfloat r, g, b, a;
 };
 
-// Создание вершин куба с текстурными координатами и цветами (упрощенное как у ребят)
+// Создание вершин куба с текстурными координатами и цветами
 std::vector<CubeVertexWithColor> createCubeVerticesWithColor() {
     std::vector<CubeVertexWithColor> vertices;
     
@@ -357,7 +357,7 @@ GLuint loadTexture(const std::string& filename) {
     return texture;
 }
 
-// Обработка клавиатуры для первого куба (как у ребят)
+// Обработка клавиатуры для первого куба
 void Cube1_HandleKeyboard() {
     // Изменение интенсивности цвета с плавным шагом
     if (sf::Keyboard::isKeyPressed(sf::Keyboard::Up)) {
