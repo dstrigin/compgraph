@@ -10,7 +10,7 @@ struct Vertex {
 };
 
 GLuint Program;
-GLuint Attrib_vertex;
+GLint Attrib_vertex;
 GLuint VBO;
 
 const char* VertexShaderSource = R"(
@@ -28,6 +28,13 @@ void main() {
     color = vec4(0, 1, 0, 1);
 }
 )";
+
+void checkOpenGLerror() {
+    GLenum err = glGetError();
+    if (err != GL_NO_ERROR) {
+        std::cerr << "OpenGL error! Code: " << err << std::endl;
+    }
+}
 
 void ShaderLog(unsigned int shader) {
     int infologLen = 0;
@@ -47,6 +54,7 @@ void InitShader() {
     glCompileShader(vShader);
     std::cout << "vertex shader \n";
     ShaderLog(vShader);
+    checkOpenGLerror();
 
     // Фрагментный шейдер
     GLuint fShader = glCreateShader(GL_FRAGMENT_SHADER);
@@ -54,6 +62,7 @@ void InitShader() {
     glCompileShader(fShader);
     std::cout << "fragment shader \n";
     ShaderLog(fShader);
+    checkOpenGLerror();
 
     // Шейдерная программа
     Program = glCreateProgram();
@@ -68,6 +77,7 @@ void InitShader() {
         return;
     }
 
+    // Получаем ID атрибута
     const char* attr_name = "coord";
     Attrib_vertex = glGetAttribLocation(Program, attr_name);
     if (Attrib_vertex == -1) {
@@ -75,21 +85,27 @@ void InitShader() {
         return;
     }
 
+    // Удаляем шейдеры, так как они уже включены в программу
     glDeleteShader(vShader);
     glDeleteShader(fShader);
+    
+    checkOpenGLerror();
 }
 
 void InitVBO() {
     glGenBuffers(1, &VBO);
     
+    // Вершины треугольника
     Vertex triangle[3] = {
-        {  0.0f,  1.0f }, // Вершина треугольника (y = 1.0)
-        { -1.0f, -1.0f }, // Левый нижний угол (x = -1.0, y = -1.0)  
-        {  1.0f, -1.0f }  // Правый нижний угол (x = 1.0, y = -1.0)
+        { -1.0f, -1.0f },  // Левый нижний
+        {  0.0f,  1.0f },  // Верх
+        {  1.0f, -1.0f }   // Правый нижний
     };
 
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
     glBufferData(GL_ARRAY_BUFFER, sizeof(triangle), triangle, GL_STATIC_DRAW);
+    
+    checkOpenGLerror();
 }
 
 void Init() {
@@ -103,15 +119,29 @@ void Draw() {
     
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
     glVertexAttribPointer(Attrib_vertex, 2, GL_FLOAT, GL_FALSE, 0, 0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);  // Отключаем VBO после настройки атрибутов
+    
     glDrawArrays(GL_TRIANGLES, 0, 3);
     
     glDisableVertexAttribArray(Attrib_vertex);
     glUseProgram(0);
+    
+    checkOpenGLerror();
+}
+
+void ReleaseVBO() {
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glDeleteBuffers(1, &VBO);
+}
+
+void ReleaseShader() {
+    glUseProgram(0);
+    glDeleteProgram(Program);
 }
 
 void Release() {
-    glDeleteProgram(Program);
-    glDeleteBuffers(1, &VBO);
+    ReleaseShader();
+    ReleaseVBO();
 }
 
 int main() {
@@ -120,14 +150,12 @@ int main() {
     window.setVerticalSyncEnabled(true);
     window.setActive(true);
 
+    // Инициализация GLEW
     glewExperimental = GL_TRUE;
     if (glewInit() != GLEW_OK) {
         std::cout << "Failed to initialize GLEW" << std::endl;
         return -1;
     }
-
-    glViewport(0, 0, 600, 600);
-    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 
     Init();
 
@@ -141,7 +169,7 @@ int main() {
             }
         }
 
-        glClear(GL_COLOR_BUFFER_BIT);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         Draw();
         window.display();
     }
