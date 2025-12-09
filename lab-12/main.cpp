@@ -959,7 +959,7 @@ int main() {
     setlocale(LC_ALL, "ru");
     
     // Создаем окно SFML
-    sf::Window window(sf::VideoMode(900, 900), "Лабораторная работа 12: 3D графика", 
+    sf::Window window(sf::VideoMode(900, 900), "Lab 12", 
                      sf::Style::Default, sf::ContextSettings(32));
     window.setVerticalSyncEnabled(true);
     window.setActive(true);
@@ -971,15 +971,9 @@ int main() {
         return -1;
     }
     
-    // Информация о системе
-    std::cout << "Система OpenGL инициализирована успешно" << std::endl;
-    std::cout << "Версия OpenGL: " << glGetString(GL_VERSION) << std::endl;
-    std::cout << "Версия GLSL: " << glGetString(GL_SHADING_LANGUAGE_VERSION) << std::endl;
-    std::cout << std::endl;
-    std::cout << "Лабораторная работа 12 - Управление графикой" << std::endl;
     std::cout << "Клавиши переключения заданий: 1, 2, 3, 4" << std::endl;
     std::cout << std::endl;
-    std::cout << "Текущее задание: Тетраэдр (№1)" << std::endl;
+    std::cout << "Текущее задание: Тетраэдр (#1)" << std::endl;
     std::cout << "Управление: стрелки для перемещения, W/S для оси Z" << std::endl;
     
     // Инициализация
