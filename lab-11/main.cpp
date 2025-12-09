@@ -2,7 +2,7 @@
 #include <GL/glew.h>
 #include <iostream>
 
-enum Figure { DIAMOND, FAN, PENTAGON };
+enum Figure { DIAMOND, FAN, PENTAGON, FADE_DIAMOND, FADE_FAN, FADE_PENTAGON };
 
 // ID шейдерной программы
 GLuint Program;
@@ -13,9 +13,17 @@ GLuint VBO;
 
 GLint Unif_color;
 
+GLint Attrib_color;
+
 struct Vertex {
     GLfloat x;
     GLfloat y;
+};
+
+struct VertexColor {
+    GLfloat x;
+    GLfloat y;
+    GLfloat r, g, b;
 };
 
 // Исходный код вершинного шейдера
@@ -42,6 +50,29 @@ uniform vec4 u_color;
 out vec4 color;
 void main() {
     color = u_color;
+}
+)";
+
+const char* VertexShaderFadeSource = R"(
+#version 330 core
+in vec2 coord;
+in vec3 color;
+
+out vec3 vert_color;
+
+void main() {
+    gl_Position = vec4(coord, 0.0, 1.0);
+    vert_color = color;
+}
+)";
+
+const char* FragShaderFadeSource = R"(
+#version 330 core
+in vec3 vert_color;
+out vec4 color;
+
+void main() {
+    color = vec4(vert_color, 1.0); // Добавляем альфа-канал (1.0)
 }
 )";
 
@@ -88,6 +119,49 @@ void InitVBOPentagon() {
         { 0.0f, 0.8f },
         { 0.75f, 0.2f },
         { 0.4f, -0.5f }
+    };
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(pentagon), pentagon, GL_STATIC_DRAW);
+    checkOpenGLerror();
+}
+
+void InitVBODiamondFade() {
+    glGenBuffers(1, &VBO);
+    // x, y, r, g, b
+    VertexColor square[4] = {
+        { 0.0f, -0.9f,   1.0f, 0.0f, 0.0f },
+        { 0.4f,  0.0f,   0.0f, 1.0f, 0.0f },
+        { 0.0f,  0.9f,   0.0f, 0.0f, 1.0f },
+        {-0.4f,  0.0f,   1.0f, 1.0f, 0.0f }
+    };
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(square), square, GL_STATIC_DRAW);
+    checkOpenGLerror();
+}
+
+void InitVBOFanFade() {
+    glGenBuffers(1, &VBO);
+    VertexColor fan[6] = {
+        { -0.1f, -0.4f, 1.0f, 0.0f, 0.0f },
+        { -0.9f, -0.2f, 0.0f, 1.0f, 0.0f},
+        { -0.65f, 0.2f, 0.0f, 0.0f, 1.0f },
+        { -0.1f, 0.5f,  1.0f, 1.0f, 0.0f },
+        { 0.45f, 0.5f,  1.0f, 0.0f, 1.0f },
+        { 0.9f, -0.4f,  0.0f, 1.0f, 1.0f }
+    };
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(fan), fan, GL_STATIC_DRAW);
+    checkOpenGLerror();
+}
+
+void InitVBOPentagonFade() {
+    glGenBuffers(1, &VBO);
+    VertexColor pentagon[5] = {
+        { -0.4f, -0.5f, 1.0f, 0.0f, 0.0f},
+        { -0.75f, 0.2f, 0.0f, 1.0f, 0.0f },
+        { 0.0f, 0.8f,   0.0f, 0.0f, 1.0f },
+        { 0.75f, 0.2f,  1.0f, 0.0f, 1.0f },
+        { 0.4f, -0.5f,  0.0f, 1.0f, 1.0f }
     };
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
     glBufferData(GL_ARRAY_BUFFER, sizeof(pentagon), pentagon, GL_STATIC_DRAW);
@@ -178,6 +252,36 @@ void InitUniformShader(float r, float g, float b) {
     checkOpenGLerror();
 }
 
+void InitFadeShader() {
+    GLuint vShader = glCreateShader(GL_VERTEX_SHADER);
+    glShaderSource(vShader, 1, &VertexShaderFadeSource, NULL);
+    glCompileShader(vShader);
+    checkOpenGLerror();
+
+    GLuint fShader = glCreateShader(GL_FRAGMENT_SHADER);
+    glShaderSource(fShader, 1, &FragShaderFadeSource, NULL);
+    glCompileShader(fShader);
+    checkOpenGLerror();
+
+    Program = glCreateProgram();
+    glAttachShader(Program, vShader);
+    glAttachShader(Program, fShader);
+    glLinkProgram(Program);
+    int link_ok;
+    glGetProgramiv(Program, GL_LINK_STATUS, &link_ok);
+    if (!link_ok) {
+        std::cout << "error attach shaders \n";
+        return;
+    }
+    Attrib_vertex = glGetAttribLocation(Program, "coord");
+    Attrib_color = glGetAttribLocation(Program, "color");
+    if (Attrib_vertex == -1 || Attrib_color == -1) {
+        std::cout << "could not bind attrib" << std::endl;
+        return;
+    }
+    checkOpenGLerror();
+}
+
 void InitDiamond(bool use_uniform = false) {
     if (use_uniform) {
         InitUniformShader(1.0f, 0.0f, 0.0f);
@@ -244,6 +348,57 @@ void DrawPentagon() {
     checkOpenGLerror();
 }
 
+void DrawFadeDiamond() {
+    glUseProgram(Program);
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+
+    glEnableVertexAttribArray(Attrib_vertex);
+    glVertexAttribPointer(Attrib_vertex, 2, GL_FLOAT, GL_FALSE, sizeof(VertexColor), (void*)0);
+
+    glEnableVertexAttribArray(Attrib_color);
+    glVertexAttribPointer(Attrib_color, 3, GL_FLOAT, GL_FALSE, sizeof(VertexColor), (void*)(2 * sizeof(GLfloat)));
+
+    glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
+
+    glDisableVertexAttribArray(Attrib_vertex);
+    glDisableVertexAttribArray(Attrib_color);
+    glUseProgram(0);
+}
+
+void DrawFadeFan() {
+    glUseProgram(Program);
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+
+    glEnableVertexAttribArray(Attrib_vertex);
+    glVertexAttribPointer(Attrib_vertex, 2, GL_FLOAT, GL_FALSE, sizeof(VertexColor), (void*)0);
+
+    glEnableVertexAttribArray(Attrib_color);
+    glVertexAttribPointer(Attrib_color, 3, GL_FLOAT, GL_FALSE, sizeof(VertexColor), (void*)(2 * sizeof(GLfloat)));
+
+    glDrawArrays(GL_TRIANGLE_FAN, 0, 6);
+
+    glDisableVertexAttribArray(Attrib_vertex);
+    glDisableVertexAttribArray(Attrib_color);
+    glUseProgram(0);
+}
+
+void DrawFadePentagon() {
+    glUseProgram(Program);
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+
+    glEnableVertexAttribArray(Attrib_vertex);
+    glVertexAttribPointer(Attrib_vertex, 2, GL_FLOAT, GL_FALSE, sizeof(VertexColor), (void*)0);
+
+    glEnableVertexAttribArray(Attrib_color);
+    glVertexAttribPointer(Attrib_color, 3, GL_FLOAT, GL_FALSE, sizeof(VertexColor), (void*)(2 * sizeof(GLfloat)));
+
+    glDrawArrays(GL_TRIANGLE_FAN, 0, 5);
+
+    glDisableVertexAttribArray(Attrib_vertex);
+    glDisableVertexAttribArray(Attrib_color);
+    glUseProgram(0);
+}
+
 // Освобождение буфера
 void ReleaseVBO() {
     glBindBuffer(GL_ARRAY_BUFFER, 0);
@@ -271,7 +426,9 @@ void print_options() {
     std::cout << "2. S - нарисовать веер" << std::endl;
     std::cout << "3. D - нарисовать пятиугольник" << std::endl;
     std::cout << "4. U - переключить режим передачи цвета (хардкод / uniform)" << std::endl;
-    std::cout << "5. F - включить / отключить градиентную заливку" << std::endl;
+    std::cout << "5. Q - нарисовать ромб с градиентом" << std::endl;
+    std::cout << "6. W - нарисовать веер с градиентом" << std::endl;
+    std::cout << "7. E - нарисовать пятиугольник с градиентом" << std::endl;
 }
 
 int main() {
@@ -296,23 +453,46 @@ int main() {
             if (event.type == sf::Event::KeyPressed) {
                 switch (event.key.code) {
                     case sf::Keyboard::Escape: window.close(); break;
-                    case sf::Keyboard::U: use_unif = !use_unif; break;
+                    case sf::Keyboard::U:
+                        use_unif = !use_unif;
+                        Release();
+                        if (curr_figure == DIAMOND) InitDiamond(use_unif);
+                        else if (curr_figure == FAN) InitFan(use_unif);
+                        else if (curr_figure == PENTAGON) InitPentagon(use_unif);
+                        break;
                     case sf::Keyboard::A: 
                         Release();
                         InitDiamond(use_unif);
                         curr_figure = Figure::DIAMOND;    
                         break;
-                        
                     case sf::Keyboard::S: 
                         Release();
                         InitFan(use_unif);
                         curr_figure = Figure::FAN;     
                         break;
-                        
                     case sf::Keyboard::D: 
                         Release();
                         InitPentagon(use_unif);
                         curr_figure = Figure::PENTAGON;   
+                        break;
+
+                    case sf::Keyboard::Q:
+                        Release();
+                        InitFadeShader();      // Грузим новые шейдеры
+                        InitVBODiamondFade();  // Грузим данные с цветами
+                        curr_figure = Figure::FADE_DIAMOND; // Придумай новый enum
+                        break;
+                    case sf::Keyboard::W:
+                        Release();
+                        InitFadeShader();      // Грузим новые шейдеры
+                        InitVBOFanFade();  // Грузим данные с цветами
+                        curr_figure = Figure::FADE_FAN; // Придумай новый enum
+                        break;
+                    case sf::Keyboard::E:
+                        Release();
+                        InitFadeShader();      // Грузим новые шейдеры
+                        InitVBOPentagonFade();  // Грузим данные с цветами
+                        curr_figure = Figure::FADE_PENTAGON; // Придумай новый enum
                         break;
                 }
             }
@@ -326,6 +506,12 @@ int main() {
             DrawFan();
         } else if (curr_figure == Figure::PENTAGON) {
             DrawPentagon();
+        } else if (curr_figure == Figure::FADE_DIAMOND) {
+            DrawFadeDiamond();
+        } else if (curr_figure == Figure::FADE_FAN) {
+            DrawFadeFan();
+        } else if (curr_figure == Figure::FADE_PENTAGON) {
+            DrawFadePentagon();
         }
 
         window.display();
