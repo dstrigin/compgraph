@@ -8,7 +8,6 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
-// Перечисление для выбора задания
 enum Assignment {
     ASSIGNMENT_1 = 1, // Градиентный тетраэдр
     ASSIGNMENT_2 = 2, // Кубик с текстурой и цветом
@@ -18,7 +17,6 @@ enum Assignment {
 
 Assignment currentAssignment = ASSIGNMENT_1;
 
-// Структуры для хранения данных вершин
 struct Vertex3DWithColor {
     GLfloat x, y, z;    // координаты
     GLfloat r, g, b, a; // цвет с альфа-каналом
@@ -29,7 +27,6 @@ struct Vertex3DWithTex {
     GLfloat u, v;       // текстурные координаты
 };
 
-// Вспомогательная функция для вывода логов шейдеров
 void ShaderLog(unsigned int shader) {
     int logLength = 0;
     glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &logLength);
@@ -40,7 +37,6 @@ void ShaderLog(unsigned int shader) {
     }
 }
 
-// Проверка ошибок OpenGL
 void checkOpenGLerror() {
     GLenum err = glGetError();
     if (err != GL_NO_ERROR) {
@@ -48,14 +44,14 @@ void checkOpenGLerror() {
     }
 }
 
-// ========================== ЗАДАНИЕ 1: ГРАДИЕНТНЫЙ ТЕТРАЭДР ==========================
+// 1 ------------------------------------------------------------------------------------------------------------
+// ГРАДИЕНТНЫЙ ТЕТРАЭДР
 
 GLuint VBO_Tetrahedron, ProgramTetrahedron;
 glm::vec3 tetrahedronPos(0.0f);
 GLuint Attrib_vertex_tetra, Attrib_color_tetra;
 GLuint Uniform_offset_tetra, Uniform_projection_tetra, Uniform_view_tetra, Uniform_model_tetra;
 
-// Вершинный шейдер для тетраэдра
 const char* VertexShaderTetra = R"(
 #version 330 core
 layout(location = 0) in vec3 position;
@@ -73,7 +69,6 @@ void main() {
 }
 )";
 
-// Фрагментный шейдер для тетраэдра
 const char* FragShaderTetra = R"(
 #version 330 core
 in vec4 vertexColor;
@@ -83,7 +78,6 @@ void main() {
 }
 )";
 
-// Инициализация шейдеров для тетраэдра
 void Tetrahedron_InitShader() {
     GLuint vShader = glCreateShader(GL_VERTEX_SHADER);
     glShaderSource(vShader, 1, &VertexShaderTetra, NULL);
@@ -112,7 +106,6 @@ void Tetrahedron_InitShader() {
     checkOpenGLerror();
 }
 
-// Создание вершин тетраэдра с улучшенными градиентами
 std::vector<Vertex3DWithColor> createTetrahedron() {
     std::vector<Vertex3DWithColor> vertices;
     float h = 0.8f;  // высота тетраэдра
@@ -127,22 +120,22 @@ std::vector<Vertex3DWithColor> createTetrahedron() {
     float v2_x = -r/2.0f, v2_y = base_y, v2_z = r*0.866f;          
     float v3_x = -r/2.0f, v3_y = base_y, v3_z = -r*0.866f;        
 
-    // Грань 1: белая, зеленая, синяя
+    // Грань 1
     vertices.push_back({top_x, top_y, top_z, 1.0f, 1.0f, 1.0f, 1.0f}); // белая
     vertices.push_back({v1_x, v1_y, v1_z, 0.0f, 1.0f, 0.0f, 1.0f}); // зеленая
     vertices.push_back({v2_x, v2_y, v2_z, 0.0f, 0.0f, 1.0f, 1.0f}); // синяя
 
-    // Грань 2: белая, синяя, красная
+    // Грань 2
     vertices.push_back({top_x, top_y, top_z, 1.0f, 1.0f, 1.0f, 1.0f}); // белая
     vertices.push_back({v2_x, v2_y, v2_z, 0.0f, 0.0f, 1.0f, 1.0f}); // синяя
     vertices.push_back({v3_x, v3_y, v3_z, 1.0f, 0.0f, 0.0f, 1.0f}); // красная
 
-    // Грань 3: белая, красная, зеленая
+    // Грань 3
     vertices.push_back({top_x, top_y, top_z, 1.0f, 1.0f, 1.0f, 1.0f}); // белая
     vertices.push_back({v3_x, v3_y, v3_z, 1.0f, 0.0f, 0.0f, 1.0f}); // красная
     vertices.push_back({v1_x, v1_y, v1_z, 0.0f, 1.0f, 0.0f, 1.0f}); // зеленая
 
-    // Грань 4 (основание): зеленая, красная, синяя
+    // Грань 4 (основание)
     vertices.push_back({v1_x, v1_y, v1_z, 0.0f, 1.0f, 0.0f, 1.0f}); // зеленая
     vertices.push_back({v3_x, v3_y, v3_z, 1.0f, 0.0f, 0.0f, 1.0f}); // красная
     vertices.push_back({v2_x, v2_y, v2_z, 0.0f, 0.0f, 1.0f, 1.0f}); // синяя
@@ -150,7 +143,6 @@ std::vector<Vertex3DWithColor> createTetrahedron() {
     return vertices;
 }
 
-// Инициализация VBO для тетраэдра
 void Tetrahedron_InitVBO() {
     auto vertices = createTetrahedron();
     glGenBuffers(1, &VBO_Tetrahedron);
@@ -160,7 +152,6 @@ void Tetrahedron_InitVBO() {
     checkOpenGLerror();
 }
 
-// Обработка клавиатуры для перемещения тетраэдра
 void Tetrahedron_HandleKeyboard() {
     float speed = 0.02f;
     if (sf::Keyboard::isKeyPressed(sf::Keyboard::Left)) tetrahedronPos.x -= speed;
@@ -171,14 +162,12 @@ void Tetrahedron_HandleKeyboard() {
     if (sf::Keyboard::isKeyPressed(sf::Keyboard::S)) tetrahedronPos.z += speed;
 }
 
-// Отрисовка тетраэдра
 void Tetrahedron_Draw() {
     Tetrahedron_HandleKeyboard();
     
     glUseProgram(ProgramTetrahedron);
     glBindBuffer(GL_ARRAY_BUFFER, VBO_Tetrahedron);
     
-    // Устанавливаем атрибуты вершин
     glEnableVertexAttribArray(Attrib_vertex_tetra);
     glVertexAttribPointer(Attrib_vertex_tetra, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex3DWithColor), (void*)0);
     glEnableVertexAttribArray(Attrib_color_tetra);
@@ -212,7 +201,8 @@ void Tetrahedron_Release() {
     glDeleteProgram(ProgramTetrahedron);
 }
 
-// ======================= ЗАДАНИЕ 2: КУБИК С ТЕКСТУРОЙ И ЦВЕТОМ =======================
+// 2 ------------------------------------------------------------------------------------------------------------
+// КУБИК С ТЕКСТУРОЙ И ЦВЕТОМ
 
 GLuint VBO_Cube1, VAO_Cube1, ProgramCube1, textureID1;
 float colorIntensity = 1.0f;
@@ -265,7 +255,7 @@ struct CubeVertexWithColor {
     GLfloat r, g, b, a;
 };
 
-// Создание вершин куба с текстурными координатами и цветами
+// Создание вершин куба с текстурными координатами и цветами (упрощенное как у ребят)
 std::vector<CubeVertexWithColor> createCubeVerticesWithColor() {
     std::vector<CubeVertexWithColor> vertices;
     
@@ -357,7 +347,7 @@ GLuint loadTexture(const std::string& filename) {
     return texture;
 }
 
-// Обработка клавиатуры для первого куба
+// Обработка клавиатуры для первого куба (как у ребят)
 void Cube1_HandleKeyboard() {
     // Изменение интенсивности цвета с плавным шагом
     if (sf::Keyboard::isKeyPressed(sf::Keyboard::Up)) {
@@ -531,7 +521,8 @@ void Cube1_Release() {
     glDeleteTextures(1, &textureID1);
 }
 
-// ======================= ЗАДАНИЕ 3: КУБИК С ДВУМЯ ТЕКСТУРАМИ =======================
+// 3 ------------------------------------------------------------------------------------------------------------
+// КУБИК С ДВУМЯ ТЕКСТУРАМИ
 
 GLuint VBO_Cube2, VAO_Cube2, ProgramCube2, textureID2_1, textureID2_2;
 float textureMix = 0.5f;
@@ -723,7 +714,8 @@ void Cube2_Release() {
     glDeleteTextures(1, &textureID2_2);
 }
 
-// ======================= ЗАДАНИЕ 4: ГРАДИЕНТНЫЙ КРУГ =======================
+// 4 ------------------------------------------------------------------------------------------------------------
+// ГРАДИЕНТНЫЙ КРУГ
 
 GLuint VBO_Circle, ProgramCircle;
 glm::vec2 circleScale(1.0f);
@@ -908,7 +900,8 @@ void Circle_Release() {
     glDeleteProgram(ProgramCircle);
 }
 
-// ======================= ГЛАВНЫЕ ФУНКЦИИ УПРАВЛЕНИЯ =======================
+// ------------------------------------------------------------------------------------------------------------
+// ФУНКЦИИ УПРАВЛЕНИЯ
 
 // Инициализация текущего задания
 void Init() {
@@ -953,7 +946,8 @@ void Release() {
     }
 }
 
-// ======================= ГЛАВНАЯ ФУНКЦИЯ =======================
+// ------------------------------------------------------------------------------------------------------------
+// ГЛАВНАЯ ФУНКЦИЯ
 
 int main() {
     setlocale(LC_ALL, "ru");
