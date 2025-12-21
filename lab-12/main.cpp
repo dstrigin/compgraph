@@ -204,14 +204,14 @@ void Tetrahedron_Release() {
 // 2 ------------------------------------------------------------------------------------------------------------
 // КУБИК С ТЕКСТУРОЙ И ЦВЕТОМ
 
-GLuint VBO_Cube1, VAO_Cube1, ProgramCube1, textureID1;
+GLuint VBO_Cube1, ProgramCube1, textureID1;
 float colorIntensity = 1.0f;
 glm::vec3 baseColor(1.0f);
 GLuint Attrib_vertex_cube1, Attrib_texcoord_cube1, Attrib_color_cube1;
 GLuint Uniform_model_cube1, Uniform_view_cube1, Uniform_projection_cube1;
 GLuint Uniform_colorIntensity_cube1, Uniform_baseColor_cube1;
 
-// Шейдеры для первого куба с улучшенным смешиванием цветов (как у ребят)
+// Шейдеры для первого куба с улучшенным смешиванием цветов
 const char* VertexShaderCube1 = R"(
 #version 330 core
 layout(location = 0) in vec3 position;
@@ -239,8 +239,6 @@ uniform float colorIntensity;
 uniform vec3 baseColor;
 void main() {
     vec4 textureColor = texture(textureSampler, TexCoord);
-    
-    // Улучшенное смешивание как у ребят
     vec4 coloredTexture = vec4(textureColor.rgb * baseColor, textureColor.a);
     
     // Смешиваем текстуру и окрашенную текстуру
@@ -255,11 +253,10 @@ struct CubeVertexWithColor {
     GLfloat r, g, b, a;
 };
 
-// Создание вершин куба с текстурными координатами и цветами (упрощенное как у ребят)
+// Создание вершин куба с текстурными координатами и цветами (36 вершин для 12 треугольников)
 std::vector<CubeVertexWithColor> createCubeVerticesWithColor() {
     std::vector<CubeVertexWithColor> vertices;
-    
-    // Более простые цвета для граней как у ребят
+
     glm::vec4 frontColor(1.0f, 0.0f, 0.0f, 1.0f);    // красный
     glm::vec4 backColor(0.0f, 1.0f, 0.0f, 1.0f);     // зеленый
     glm::vec4 topColor(0.0f, 0.0f, 1.0f, 1.0f);      // синий
@@ -267,54 +264,61 @@ std::vector<CubeVertexWithColor> createCubeVerticesWithColor() {
     glm::vec4 rightColor(1.0f, 0.0f, 1.0f, 1.0f);    // фиолетовый
     glm::vec4 leftColor(0.0f, 1.0f, 1.0f, 1.0f);     // бирюзовый
     
-    // Передняя грань (красная)
+    // Передняя грань (красная) - 2 треугольника
     vertices.push_back({-0.5f, -0.5f,  0.5f, 0.0f, 0.0f, frontColor.r, frontColor.g, frontColor.b, frontColor.a});
     vertices.push_back({0.5f, -0.5f,  0.5f, 1.0f, 0.0f, frontColor.r, frontColor.g, frontColor.b, frontColor.a});
     vertices.push_back({0.5f,  0.5f,  0.5f, 1.0f, 1.0f, frontColor.r, frontColor.g, frontColor.b, frontColor.a});
+    
+    vertices.push_back({-0.5f, -0.5f,  0.5f, 0.0f, 0.0f, frontColor.r, frontColor.g, frontColor.b, frontColor.a});
+    vertices.push_back({0.5f,  0.5f,  0.5f, 1.0f, 1.0f, frontColor.r, frontColor.g, frontColor.b, frontColor.a});
     vertices.push_back({-0.5f,  0.5f,  0.5f, 0.0f, 1.0f, frontColor.r, frontColor.g, frontColor.b, frontColor.a});
     
-    // Задняя грань (зеленая)
+    // Задняя грань (зеленая) - 2 треугольника
     vertices.push_back({-0.5f, -0.5f, -0.5f, 1.0f, 0.0f, backColor.r, backColor.g, backColor.b, backColor.a});
     vertices.push_back({-0.5f,  0.5f, -0.5f, 1.0f, 1.0f, backColor.r, backColor.g, backColor.b, backColor.a});
     vertices.push_back({0.5f,  0.5f, -0.5f, 0.0f, 1.0f, backColor.r, backColor.g, backColor.b, backColor.a});
+    
+    vertices.push_back({-0.5f, -0.5f, -0.5f, 1.0f, 0.0f, backColor.r, backColor.g, backColor.b, backColor.a});
+    vertices.push_back({0.5f,  0.5f, -0.5f, 0.0f, 1.0f, backColor.r, backColor.g, backColor.b, backColor.a});
     vertices.push_back({0.5f, -0.5f, -0.5f, 0.0f, 0.0f, backColor.r, backColor.g, backColor.b, backColor.a});
     
-    // Верхняя грань (синяя)
+    // Верхняя грань (синяя) - 2 треугольника
     vertices.push_back({-0.5f,  0.5f, -0.5f, 0.0f, 1.0f, topColor.r, topColor.g, topColor.b, topColor.a});
     vertices.push_back({-0.5f,  0.5f,  0.5f, 0.0f, 0.0f, topColor.r, topColor.g, topColor.b, topColor.a});
     vertices.push_back({0.5f,  0.5f,  0.5f, 1.0f, 0.0f, topColor.r, topColor.g, topColor.b, topColor.a});
+    
+    vertices.push_back({-0.5f,  0.5f, -0.5f, 0.0f, 1.0f, topColor.r, topColor.g, topColor.b, topColor.a});
+    vertices.push_back({0.5f,  0.5f,  0.5f, 1.0f, 0.0f, topColor.r, topColor.g, topColor.b, topColor.a});
     vertices.push_back({0.5f,  0.5f, -0.5f, 1.0f, 1.0f, topColor.r, topColor.g, topColor.b, topColor.a});
     
-    // Нижняя грань (желтая)
+    // Нижняя грань (желтая) - 2 треугольника
     vertices.push_back({-0.5f, -0.5f, -0.5f, 1.0f, 1.0f, bottomColor.r, bottomColor.g, bottomColor.b, bottomColor.a});
     vertices.push_back({0.5f, -0.5f, -0.5f, 0.0f, 1.0f, bottomColor.r, bottomColor.g, bottomColor.b, bottomColor.a});
     vertices.push_back({0.5f, -0.5f,  0.5f, 0.0f, 0.0f, bottomColor.r, bottomColor.g, bottomColor.b, bottomColor.a});
+    
+    vertices.push_back({-0.5f, -0.5f, -0.5f, 1.0f, 1.0f, bottomColor.r, bottomColor.g, bottomColor.b, bottomColor.a});
+    vertices.push_back({0.5f, -0.5f,  0.5f, 0.0f, 0.0f, bottomColor.r, bottomColor.g, bottomColor.b, bottomColor.a});
     vertices.push_back({-0.5f, -0.5f,  0.5f, 1.0f, 0.0f, bottomColor.r, bottomColor.g, bottomColor.b, bottomColor.a});
     
-    // Правая грань (фиолетовая)
+    // Правая грань (фиолетовая) - 2 треугольника
     vertices.push_back({0.5f, -0.5f, -0.5f, 1.0f, 0.0f, rightColor.r, rightColor.g, rightColor.b, rightColor.a});
     vertices.push_back({0.5f,  0.5f, -0.5f, 1.0f, 1.0f, rightColor.r, rightColor.g, rightColor.b, rightColor.a});
     vertices.push_back({0.5f,  0.5f,  0.5f, 0.0f, 1.0f, rightColor.r, rightColor.g, rightColor.b, rightColor.a});
+    
+    vertices.push_back({0.5f, -0.5f, -0.5f, 1.0f, 0.0f, rightColor.r, rightColor.g, rightColor.b, rightColor.a});
+    vertices.push_back({0.5f,  0.5f,  0.5f, 0.0f, 1.0f, rightColor.r, rightColor.g, rightColor.b, rightColor.a});
     vertices.push_back({0.5f, -0.5f,  0.5f, 0.0f, 0.0f, rightColor.r, rightColor.g, rightColor.b, rightColor.a});
     
-    // Левая грань (бирюзовая)
+    // Левая грань (бирюзовая) - 2 треугольника
     vertices.push_back({-0.5f, -0.5f, -0.5f, 0.0f, 0.0f, leftColor.r, leftColor.g, leftColor.b, leftColor.a});
     vertices.push_back({-0.5f, -0.5f,  0.5f, 1.0f, 0.0f, leftColor.r, leftColor.g, leftColor.b, leftColor.a});
+    vertices.push_back({-0.5f,  0.5f,  0.5f, 1.0f, 1.0f, leftColor.r, leftColor.g, leftColor.b, leftColor.a});
+    
+    vertices.push_back({-0.5f, -0.5f, -0.5f, 0.0f, 0.0f, leftColor.r, leftColor.g, leftColor.b, leftColor.a});
     vertices.push_back({-0.5f,  0.5f,  0.5f, 1.0f, 1.0f, leftColor.r, leftColor.g, leftColor.b, leftColor.a});
     vertices.push_back({-0.5f,  0.5f, -0.5f, 0.0f, 1.0f, leftColor.r, leftColor.g, leftColor.b, leftColor.a});
     
     return vertices;
-}
-
-// Индексы для куба
-std::vector<GLuint> createCubeIndices() {
-    std::vector<GLuint> indices;
-    for (int i = 0; i < 6; i++) {
-        GLuint base = i * 4;
-        indices.push_back(base); indices.push_back(base+1); indices.push_back(base+2);
-        indices.push_back(base); indices.push_back(base+2); indices.push_back(base+3);
-    }
-    return indices;
 }
 
 // Загрузка текстуры из файла
@@ -347,7 +351,7 @@ GLuint loadTexture(const std::string& filename) {
     return texture;
 }
 
-// Обработка клавиатуры для первого куба (как у ребят)
+// Обработка клавиатуры для первого куба
 void Cube1_HandleKeyboard() {
     // Изменение интенсивности цвета с плавным шагом
     if (sf::Keyboard::isKeyPressed(sf::Keyboard::Up)) {
@@ -443,35 +447,18 @@ void Cube1_InitShader() {
     checkOpenGLerror();
 }
 
-// Инициализация VBO и VAO для первого куба
+// Инициализация VBO для первого куба
 void Cube1_InitVBO() {
     auto vertices = createCubeVerticesWithColor();
-    auto indices = createCubeIndices();
     
-    glGenVertexArrays(1, &VAO_Cube1);
-    glBindVertexArray(VAO_Cube1);
-    
+    // Создаем VBO для вершин
     glGenBuffers(1, &VBO_Cube1);
     glBindBuffer(GL_ARRAY_BUFFER, VBO_Cube1);
     glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(CubeVertexWithColor), vertices.data(), GL_STATIC_DRAW);
-    
-    GLuint IBO;
-    glGenBuffers(1, &IBO);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, IBO);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(GLuint), indices.data(), GL_STATIC_DRAW);
-    
-    // Настраиваем атрибуты вершин
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(CubeVertexWithColor), (void*)0);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(CubeVertexWithColor), (void*)(3 * sizeof(GLfloat)));
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(CubeVertexWithColor), (void*)(5 * sizeof(GLfloat)));
-    glEnableVertexAttribArray(2);
-    
-    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
     
     // Загружаем текстуру
-    textureID1 = loadTexture("assets/textures/0.jpg");
+    textureID1 = loadTexture("assets/textures/00.jpg");
     checkOpenGLerror();
 }
 
@@ -480,7 +467,19 @@ void Cube1_Draw() {
     Cube1_HandleKeyboard();
     
     glUseProgram(ProgramCube1);
-    glBindVertexArray(VAO_Cube1);
+    
+    // Привязываем VBO и настраиваем атрибуты
+    glBindBuffer(GL_ARRAY_BUFFER, VBO_Cube1);
+    
+    // Устанавливаем указатели на атрибуты
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(CubeVertexWithColor), (void*)0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(CubeVertexWithColor), (void*)(3 * sizeof(GLfloat)));
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(CubeVertexWithColor), (void*)(5 * sizeof(GLfloat)));
+    
+    // Привязываем текстуру
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, textureID1);
     
@@ -506,17 +505,20 @@ void Cube1_Draw() {
     glUniform1f(Uniform_colorIntensity_cube1, colorIntensity);
     glUniform3fv(Uniform_baseColor_cube1, 1, glm::value_ptr(baseColor));
     
-    // Отрисовываем куб
-    glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_INT, 0);
+    // Отрисовываем куб - 36 вершин для 12 треугольников
+    glDrawArrays(GL_TRIANGLES, 0, 36);
     
-    glBindVertexArray(0);
+    // Отключаем атрибуты и отвязываем буферы
+    glDisableVertexAttribArray(0);
+    glDisableVertexAttribArray(1);
+    glDisableVertexAttribArray(2);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
     glUseProgram(0);
 }
 
 // Освобождение ресурсов первого куба
 void Cube1_Release() {
     glDeleteBuffers(1, &VBO_Cube1);
-    glDeleteVertexArrays(1, &VAO_Cube1);
     glDeleteProgram(ProgramCube1);
     glDeleteTextures(1, &textureID1);
 }
@@ -524,7 +526,7 @@ void Cube1_Release() {
 // 3 ------------------------------------------------------------------------------------------------------------
 // КУБИК С ДВУМЯ ТЕКСТУРАМИ
 
-GLuint VBO_Cube2, VAO_Cube2, ProgramCube2, textureID2_1, textureID2_2;
+GLuint VBO_Cube2, ProgramCube2, textureID2_1, textureID2_2;
 float textureMix = 0.5f;
 GLuint Attrib_vertex_cube2, Attrib_texcoord_cube2;
 GLuint Uniform_model_cube2, Uniform_view_cube2, Uniform_projection_cube2, Uniform_textureMix_cube2;
@@ -554,32 +556,68 @@ uniform float textureMix;
 void main() {
     vec4 tex1 = texture(textureSampler1, TexCoord);
     vec4 tex2 = texture(textureSampler2, TexCoord);
-    FragColor = mix(tex1, tex2, textureMix);
+    FragColor = (tex1 * (1.0 - textureMix)) + (tex2 * textureMix);
 }
 )";
 
-// Вершины для куба (без цвета)
+// Вершины для куба (36 вершин для 12 треугольников)
 std::vector<Vertex3DWithTex> createCubeVertices() {
-    std::vector<Vertex3DWithTex> vertices = {
-        // Передняя грань
-        {-0.5f, -0.5f,  0.5f, 0.0f, 0.0f}, {0.5f, -0.5f,  0.5f, 1.0f, 0.0f},
-        {0.5f,  0.5f,  0.5f, 1.0f, 1.0f}, {-0.5f,  0.5f,  0.5f, 0.0f, 1.0f},
-        // Задняя грань
-        {-0.5f, -0.5f, -0.5f, 1.0f, 0.0f}, {-0.5f,  0.5f, -0.5f, 1.0f, 1.0f},
-        {0.5f,  0.5f, -0.5f, 0.0f, 1.0f}, {0.5f, -0.5f, -0.5f, 0.0f, 0.0f},
-        // Верхняя грань
-        {-0.5f,  0.5f, -0.5f, 0.0f, 1.0f}, {-0.5f,  0.5f,  0.5f, 0.0f, 0.0f},
-        {0.5f,  0.5f,  0.5f, 1.0f, 0.0f}, {0.5f,  0.5f, -0.5f, 1.0f, 1.0f},
-        // Нижняя грань
-        {-0.5f, -0.5f, -0.5f, 1.0f, 1.0f}, {0.5f, -0.5f, -0.5f, 0.0f, 1.0f},
-        {0.5f, -0.5f,  0.5f, 0.0f, 0.0f}, {-0.5f, -0.5f,  0.5f, 1.0f, 0.0f},
-        // Правая грань
-        {0.5f, -0.5f, -0.5f, 1.0f, 0.0f}, {0.5f,  0.5f, -0.5f, 1.0f, 1.0f},
-        {0.5f,  0.5f,  0.5f, 0.0f, 1.0f}, {0.5f, -0.5f,  0.5f, 0.0f, 0.0f},
-        // Левая грань
-        {-0.5f, -0.5f, -0.5f, 0.0f, 0.0f}, {-0.5f, -0.5f,  0.5f, 1.0f, 0.0f},
-        {-0.5f,  0.5f,  0.5f, 1.0f, 1.0f}, {-0.5f,  0.5f, -0.5f, 0.0f, 1.0f}
-    };
+    std::vector<Vertex3DWithTex> vertices;
+    
+    // Передняя грань - 2 треугольника
+    vertices.push_back({-0.5f, -0.5f,  0.5f, 0.0f, 0.0f});
+    vertices.push_back({0.5f, -0.5f,  0.5f, 1.0f, 0.0f});
+    vertices.push_back({0.5f,  0.5f,  0.5f, 1.0f, 1.0f});
+    
+    vertices.push_back({-0.5f, -0.5f,  0.5f, 0.0f, 0.0f});
+    vertices.push_back({0.5f,  0.5f,  0.5f, 1.0f, 1.0f});
+    vertices.push_back({-0.5f,  0.5f,  0.5f, 0.0f, 1.0f});
+    
+    // Задняя грань - 2 треугольника
+    vertices.push_back({-0.5f, -0.5f, -0.5f, 1.0f, 0.0f});
+    vertices.push_back({-0.5f,  0.5f, -0.5f, 1.0f, 1.0f});
+    vertices.push_back({0.5f,  0.5f, -0.5f, 0.0f, 1.0f});
+    
+    vertices.push_back({-0.5f, -0.5f, -0.5f, 1.0f, 0.0f});
+    vertices.push_back({0.5f,  0.5f, -0.5f, 0.0f, 1.0f});
+    vertices.push_back({0.5f, -0.5f, -0.5f, 0.0f, 0.0f});
+    
+    // Верхняя грань - 2 треугольника
+    vertices.push_back({-0.5f,  0.5f, -0.5f, 0.0f, 1.0f});
+    vertices.push_back({-0.5f,  0.5f,  0.5f, 0.0f, 0.0f});
+    vertices.push_back({0.5f,  0.5f,  0.5f, 1.0f, 0.0f});
+    
+    vertices.push_back({-0.5f,  0.5f, -0.5f, 0.0f, 1.0f});
+    vertices.push_back({0.5f,  0.5f,  0.5f, 1.0f, 0.0f});
+    vertices.push_back({0.5f,  0.5f, -0.5f, 1.0f, 1.0f});
+    
+    // Нижняя грань - 2 треугольника
+    vertices.push_back({-0.5f, -0.5f, -0.5f, 1.0f, 1.0f});
+    vertices.push_back({0.5f, -0.5f, -0.5f, 0.0f, 1.0f});
+    vertices.push_back({0.5f, -0.5f,  0.5f, 0.0f, 0.0f});
+    
+    vertices.push_back({-0.5f, -0.5f, -0.5f, 1.0f, 1.0f});
+    vertices.push_back({0.5f, -0.5f,  0.5f, 0.0f, 0.0f});
+    vertices.push_back({-0.5f, -0.5f,  0.5f, 1.0f, 0.0f});
+    
+    // Правая грань - 2 треугольника
+    vertices.push_back({0.5f, -0.5f, -0.5f, 1.0f, 0.0f});
+    vertices.push_back({0.5f,  0.5f, -0.5f, 1.0f, 1.0f});
+    vertices.push_back({0.5f,  0.5f,  0.5f, 0.0f, 1.0f});
+    
+    vertices.push_back({0.5f, -0.5f, -0.5f, 1.0f, 0.0f});
+    vertices.push_back({0.5f,  0.5f,  0.5f, 0.0f, 1.0f});
+    vertices.push_back({0.5f, -0.5f,  0.5f, 0.0f, 0.0f});
+    
+    // Левая грань - 2 треугольника
+    vertices.push_back({-0.5f, -0.5f, -0.5f, 0.0f, 0.0f});
+    vertices.push_back({-0.5f, -0.5f,  0.5f, 1.0f, 0.0f});
+    vertices.push_back({-0.5f,  0.5f,  0.5f, 1.0f, 1.0f});
+    
+    vertices.push_back({-0.5f, -0.5f, -0.5f, 0.0f, 0.0f});
+    vertices.push_back({-0.5f,  0.5f,  0.5f, 1.0f, 1.0f});
+    vertices.push_back({-0.5f,  0.5f, -0.5f, 0.0f, 1.0f});
+    
     return vertices;
 }
 
@@ -627,30 +665,15 @@ void Cube2_InitShader() {
     checkOpenGLerror();
 }
 
-// Инициализация VBO и VAO для второго куба
+// Инициализация VBO для второго куба
 void Cube2_InitVBO() {
     auto vertices = createCubeVertices();
-    auto indices = createCubeIndices();
     
-    glGenVertexArrays(1, &VAO_Cube2);
-    glBindVertexArray(VAO_Cube2);
-    
+    // Создаем VBO для вершин
     glGenBuffers(1, &VBO_Cube2);
     glBindBuffer(GL_ARRAY_BUFFER, VBO_Cube2);
     glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(Vertex3DWithTex), vertices.data(), GL_STATIC_DRAW);
-    
-    GLuint IBO;
-    glGenBuffers(1, &IBO);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, IBO);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(GLuint), indices.data(), GL_STATIC_DRAW);
-    
-    // Настраиваем атрибуты вершин
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex3DWithTex), (void*)0);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex3DWithTex), (void*)(3 * sizeof(GLfloat)));
-    glEnableVertexAttribArray(1);
-    
-    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
     
     // Загружаем две текстуры
     textureID2_1 = loadTexture("assets/textures/1.jpg");
@@ -663,7 +686,15 @@ void Cube2_Draw() {
     Cube2_HandleKeyboard();
     
     glUseProgram(ProgramCube2);
-    glBindVertexArray(VAO_Cube2);
+    
+    // Привязываем VBO и настраиваем атрибуты
+    glBindBuffer(GL_ARRAY_BUFFER, VBO_Cube2);
+    
+    // Устанавливаем указатели на атрибуты
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex3DWithTex), (void*)0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex3DWithTex), (void*)(3 * sizeof(GLfloat)));
     
     // Активируем и привязываем первую текстуру
     glActiveTexture(GL_TEXTURE0);
@@ -698,17 +729,19 @@ void Cube2_Draw() {
     glUniformMatrix4fv(Uniform_projection_cube2, 1, GL_FALSE, glm::value_ptr(projection));
     glUniform1f(Uniform_textureMix_cube2, textureMix);
     
-    // Отрисовываем куб
-    glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_INT, 0);
+    // Отрисовываем куб - 36 вершин для 12 треугольников
+    glDrawArrays(GL_TRIANGLES, 0, 36);
     
-    glBindVertexArray(0);
+    // Отключаем атрибуты и отвязываем буферы
+    glDisableVertexAttribArray(0);
+    glDisableVertexAttribArray(1);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
     glUseProgram(0);
 }
 
 // Освобождение ресурсов второго куба
 void Cube2_Release() {
     glDeleteBuffers(1, &VBO_Cube2);
-    glDeleteVertexArrays(1, &VAO_Cube2);
     glDeleteProgram(ProgramCube2);
     glDeleteTextures(1, &textureID2_1);
     glDeleteTextures(1, &textureID2_2);
