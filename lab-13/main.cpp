@@ -11,26 +11,27 @@
 
 // ID шейдерной программы
 GLuint Program;
-// ID вершинного атрибута
+// ID вершинных атрибутов
 GLint Attrib_vertex;
-// ID атрибута текстурных координат
 GLint Attrib_texcoord;
-// ID Vertex Buffer Object для центральной модели
+GLint Attrib_instanceMatrix; // Атрибут для матрицы инстанса
+// ID буферов для центральной модели
 GLuint VBO_Center;
 GLuint TexCoordVBO_Center;
 GLuint Texture_Center;
-// ID Vertex Buffer Object для орбитальных моделей
+// ID буферов для орбитальных моделей
 GLuint VBO_Orbit;
 GLuint TexCoordVBO_Orbit;
 GLuint Texture_Orbit;
+GLuint InstanceVBO_Orbit; // Буфер для данных инстансов
 
 // камера
 glm::vec3 cameraPos   = glm::vec3(0.0f, 5.0f, 20.0f); 
 glm::vec3 cameraFront = glm::vec3(0.0f, 0.0f, -1.0f);
 glm::vec3 cameraUp    = glm::vec3(0.0f, 1.0f, 0.0f);
 
-float yaw   = -90.0f;	// влево-вправо
-float pitch = -10.0f;	// вверх-вниз
+float yaw   = -90.0f;
+float pitch = -10.0f;
 float lastX = 400.0f;
 float lastY = 300.0f;
 bool firstMouse = true;
@@ -66,26 +67,26 @@ struct Planet {
 ModelData centerModel;
 ModelData orbitModel;
 
-
 std::vector<Planet> planets;
+std::vector<glm::mat4> instanceMatrices; // Массив матриц для инстансов
 
 bool centerLoaded = false;
 bool orbitLoaded = false;
 
-// Исходный код вершинного шейдера
+// Исходный код вершинного шейдера с поддержкой инстансинга
 const char* VertexShaderSource = R"(
 #version 330 core
-in vec3 coord;
-in vec2 texcoord;
+layout (location = 0) in vec3 coord;
+layout (location = 1) in vec2 texcoord;
+layout (location = 2) in mat4 instanceMatrix; // Матрица трансформации для каждого инстанса
 
 out vec2 v_texcoord;
 
-uniform mat4 u_model;
 uniform mat4 u_view;
 uniform mat4 u_projection;
 
 void main() {
-    gl_Position = u_projection * u_view * u_model * vec4(coord, 1.0);
+    gl_Position = u_projection * u_view * instanceMatrix * vec4(coord, 1.0);
     v_texcoord = texcoord;
 }
 )";
@@ -134,19 +135,16 @@ bool LoadOBJ(const char* filename, ModelData& model) {
         iss >> prefix;
 
         if (prefix == "v") {
-            // Вершина
             Vertex v;
             iss >> v.x >> v.y >> v.z;
             temp_vertices.push_back(v);
         }
         else if (prefix == "vt") {
-            // Текстурные координаты
             TexCoord tc;
             iss >> tc.u >> tc.v;
             temp_texcoords.push_back(tc);
         }
         else if (prefix == "f") {
-            // Грань
             std::vector<int> face_v_indices;
             std::vector<int> face_vt_indices;
             
@@ -205,7 +203,6 @@ bool LoadOBJ(const char* filename, ModelData& model) {
             if (vt_idx >= 0 && vt_idx < temp_texcoords.size()) {
                 model.texcoords.push_back(temp_texcoords[vt_idx]);
             } else {
-                // Если нет текстурных координат, генерируем их
                 TexCoord tc;
                 tc.u = (temp_vertices[v_idx].x + 1.0f) * 0.5f;
                 tc.v = (temp_vertices[v_idx].y + 1.0f) * 0.5f;
@@ -289,17 +286,15 @@ void InitShader() {
         return;
     }
     
-    const char* attr_name = "coord";
-    Attrib_vertex = glGetAttribLocation(Program, attr_name);
+    Attrib_vertex = glGetAttribLocation(Program, "coord");
     if (Attrib_vertex == -1) {
-        std::cout << "could not bind attrib " << attr_name << std::endl;
+        std::cout << "could not bind attrib coord" << std::endl;
         return;
     }
     
-    const char* texcoord_name = "texcoord";
-    Attrib_texcoord = glGetAttribLocation(Program, texcoord_name);
+    Attrib_texcoord = glGetAttribLocation(Program, "texcoord");
     if (Attrib_texcoord == -1) {
-        std::cout << "could not bind attrib " << texcoord_name << std::endl;
+        std::cout << "could not bind attrib texcoord" << std::endl;
         return;
     }
     
@@ -308,37 +303,48 @@ void InitShader() {
 
 void InitSolarSystem() {
     planets.clear();
+    instanceMatrices.clear();
     
-    float customSizes[] = {0.15f, 0.55f, 0.3f, 0.80f, 1.2f};
+    // Разные размеры объектов
+    float customSizes[] = {0.05f, 0.09f, 0.10f, 0.15f, 0.20f};
+    // Разные радиусы орбит (как в настоящей солнечной системе)
+    float orbitRadii[] = {8.0f, 12.0f, 16.0f, 20.0f, 24.0f};
+    // Разные скорости вращения по орбите (ближе - быстрее)
+    float orbitSpeeds[] = {1.2f, 1.0f, 0.8f, 0.6f, 0.4f};
+    // Разные скорости вращения вокруг своей оси
+    float rotationSpeeds[] = {2.0f, 1.5f, 1.8f, 1.2f, 1.0f};
+    
     for(int i = 0; i < 5; i++) {
         Planet p;
-        p.orbitRadius = 12.0f;      
-        p.orbitSpeed = 0.8f;       
-        p.rotationSpeed = 1.5f;     
-        p.size = customSizes[i];            
-        p.orbitAngle = (M_PI * 2 / 5) * i; 
+        p.orbitRadius = orbitRadii[i];        // Каждая планета на своей орбите
+        p.orbitSpeed = orbitSpeeds[i];        // Разные скорости обращения
+        p.rotationSpeed = rotationSpeeds[i];  // Разные скорости вращения
+        p.size = customSizes[i];              // Разные размеры
+        p.orbitAngle = (M_PI * 2 / 5) * i;    // Начальное положение на орбите
         p.rotationAngle = 0.0f;
         planets.push_back(p);
+        
+        // Создаем начальную матрицу для каждого инстанса
+        instanceMatrices.push_back(glm::mat4(1.0f));
     }
     
     std::cout << "Solar system initialized with " << planets.size() << " orbiting objects" << std::endl;
+    std::cout << "Orbit radii: 5.0, 8.0, 11.0, 14.0, 17.0 units" << std::endl;
 }
 
 void LoadCenterModel(const char* objFile, const char* textureFile) {
     std::cout << "Loading center model..." << std::endl;
     if (LoadOBJ(objFile, centerModel)) {
-        // Создаем VBO 
         glGenBuffers(1, &VBO_Center);
         glBindBuffer(GL_ARRAY_BUFFER, VBO_Center);
         glBufferData(GL_ARRAY_BUFFER, centerModel.vertices.size() * sizeof(Vertex), 
-                     centerModel.vertices.data(), GL_STATIC_DRAW); //чисто чтение GPU
+                     centerModel.vertices.data(), GL_STATIC_DRAW);
         
         glGenBuffers(1, &TexCoordVBO_Center);
         glBindBuffer(GL_ARRAY_BUFFER, TexCoordVBO_Center);
         glBufferData(GL_ARRAY_BUFFER, centerModel.texcoords.size() * sizeof(TexCoord), 
                      centerModel.texcoords.data(), GL_STATIC_DRAW);
         
-        // Загружаем текстуру
         Texture_Center = LoadTexture(textureFile);
         
         centerLoaded = true;
@@ -350,19 +356,20 @@ void LoadCenterModel(const char* objFile, const char* textureFile) {
 void LoadOrbitModel(const char* objFile, const char* textureFile) {
     std::cout << "Loading orbit model..." << std::endl;
     if (LoadOBJ(objFile, orbitModel)) {
-        // Создаем VBO 
         glGenBuffers(1, &VBO_Orbit);
         glBindBuffer(GL_ARRAY_BUFFER, VBO_Orbit);
         glBufferData(GL_ARRAY_BUFFER, orbitModel.vertices.size() * sizeof(Vertex), 
-                     orbitModel.vertices.data(), GL_STATIC_DRAW); //копируем всю модельку в gpu
+                     orbitModel.vertices.data(), GL_STATIC_DRAW);
         
         glGenBuffers(1, &TexCoordVBO_Orbit);
         glBindBuffer(GL_ARRAY_BUFFER, TexCoordVBO_Orbit);
         glBufferData(GL_ARRAY_BUFFER, orbitModel.texcoords.size() * sizeof(TexCoord), 
                      orbitModel.texcoords.data(), GL_STATIC_DRAW);
         
-        // Загружаем текстуру
         Texture_Orbit = LoadTexture(textureFile);
+        
+        // Создаем буфер для инстансов
+        glGenBuffers(1, &InstanceVBO_Orbit);
         
         orbitLoaded = true;
         std::cout << "Orbit model loaded successfully!" << std::endl;
@@ -372,148 +379,206 @@ void LoadOrbitModel(const char* objFile, const char* textureFile) {
 
 void UpdatePlanets(float deltaTime) {
     for (size_t i = 0; i < planets.size(); i++) {
-        // угол на орбите
+        // Обновляем угол на орбите
         planets[i].orbitAngle += planets[i].orbitSpeed * deltaTime;
-        
-        // угол поворота вокруг своей оси
+        // Обновляем угол поворота вокруг своей оси
         planets[i].rotationAngle += planets[i].rotationSpeed * deltaTime;
+        
+        // Вычисляем позицию на орбите
+        float x = planets[i].orbitRadius * cos(planets[i].orbitAngle);
+        float z = planets[i].orbitRadius * sin(planets[i].orbitAngle);
+        float y = -1.5; // Все на одной плоскости
+        
+        // Создаем матрицу трансформации для инстанса
+        glm::mat4 model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(x, y, z));
+        model = glm::rotate(model, planets[i].rotationAngle, glm::vec3(0.0f, 1.0f, 0.0f));
+        model = glm::scale(model, glm::vec3(planets[i].size));
+        
+        instanceMatrices[i] = model;
     }
-}
-
-void DrawModel(const ModelData& model, GLuint vbo, GLuint texVbo, GLuint texture,
-               float x, float y, float z, float size, float rotationAngle, float aspect) {
-    glUseProgram(Program); 
-    
-    // Матрицы преобразования
-    glm::mat4 projection = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 300.0f); 
-    
-    //Используем динамическую камеру 
-    glm::mat4 view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
-    
-    glm::mat4 modelMat = glm::mat4(1.0f);
-    modelMat = glm::translate(modelMat, glm::vec3(x, y, z));
-    modelMat = glm::rotate(modelMat, rotationAngle, glm::vec3(0.0f, 1.0f, 0.0f));
-    modelMat = glm::scale(modelMat, glm::vec3(size));
-    
-    // Передаем uniform-переменные
-    GLint model_loc = glGetUniformLocation(Program, "u_model");
-    GLint view_loc = glGetUniformLocation(Program, "u_view");
-    GLint proj_loc = glGetUniformLocation(Program, "u_projection");
-    
-    glUniformMatrix4fv(model_loc, 1, GL_FALSE, glm::value_ptr(modelMat));
-    glUniformMatrix4fv(view_loc, 1, GL_FALSE, glm::value_ptr(view));
-    glUniformMatrix4fv(proj_loc, 1, GL_FALSE, glm::value_ptr(projection));
-    
-    // Привязываем текстуру
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, texture);
-    GLint texture_loc = glGetUniformLocation(Program, "u_texture");
-    glUniform1i(texture_loc, 0);
-    
-    // Включаем массив атрибутов для вершин
-    glEnableVertexAttribArray(Attrib_vertex);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glVertexAttribPointer(Attrib_vertex, 3, GL_FLOAT, GL_FALSE, 0, 0);
-    
-    // Включаем массив атрибутов для текстурных координат
-    glEnableVertexAttribArray(Attrib_texcoord);
-    glBindBuffer(GL_ARRAY_BUFFER, texVbo);
-    glVertexAttribPointer(Attrib_texcoord, 2, GL_FLOAT, GL_FALSE, 0, 0);
-    
-    glBindBuffer(GL_ARRAY_BUFFER, 0); // Отключаем VBO
-    
-    // Рисуем модель
-    glDrawArrays(GL_TRIANGLES, 0, model.vertexCount);
-    
-    glDisableVertexAttribArray(Attrib_vertex); // Отключаем массив атрибутов
-    glDisableVertexAttribArray(Attrib_texcoord);
-    glUseProgram(0); // Отключаем шейдерную программу
-    checkOpenGLerror();
 }
 
 void DrawCenterModel(float aspect) {
     if (!centerLoaded) return;
     
-    static float rotationAngle = 0.0f;
-    rotationAngle += 0.05f * 0.016f; 
+    glUseProgram(Program);
     
-    DrawModel(centerModel, VBO_Center, TexCoordVBO_Center, Texture_Center,
-              0.0f, 0.0f, 0.0f, 0.05f, rotationAngle, aspect);
+    static float rotationAngle = 0.0f;
+    rotationAngle += 0.05f * 0.016f;
+    
+    // Матрицы преобразования
+    glm::mat4 projection = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 300.0f);
+    glm::mat4 view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
+    
+    glm::mat4 modelMat = glm::mat4(1.0f);
+    modelMat = glm::rotate(modelMat, rotationAngle, glm::vec3(0.0f, 1.0f, 0.0f));
+    modelMat = glm::scale(modelMat, glm::vec3(0.10f));
+    
+    // Для центральной модели используем обычный рендеринг без инстансинга
+    GLint view_loc = glGetUniformLocation(Program, "u_view");
+    GLint proj_loc = glGetUniformLocation(Program, "u_projection");
+    
+    glUniformMatrix4fv(view_loc, 1, GL_FALSE, glm::value_ptr(view));
+    glUniformMatrix4fv(proj_loc, 1, GL_FALSE, glm::value_ptr(projection));
+    
+    // Привязываем текстуру
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, Texture_Center);
+    GLint texture_loc = glGetUniformLocation(Program, "u_texture");
+    glUniform1i(texture_loc, 0);
+    
+    // Вершины
+    glEnableVertexAttribArray(Attrib_vertex);
+    glBindBuffer(GL_ARRAY_BUFFER, VBO_Center);
+    glVertexAttribPointer(Attrib_vertex, 3, GL_FLOAT, GL_FALSE, 0, 0);
+    
+    // Текстурные координаты
+    glEnableVertexAttribArray(Attrib_texcoord);
+    glBindBuffer(GL_ARRAY_BUFFER, TexCoordVBO_Center);
+    glVertexAttribPointer(Attrib_texcoord, 2, GL_FLOAT, GL_FALSE, 0, 0);
+    
+    // Создаем временный буфер для одной матрицы
+    GLuint tempInstanceVBO;
+    glGenBuffers(1, &tempInstanceVBO);
+    glBindBuffer(GL_ARRAY_BUFFER, tempInstanceVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(glm::mat4), glm::value_ptr(modelMat), GL_STATIC_DRAW);
+    
+    // Настраиваем атрибуты для матрицы (4 vec4)
+    for (int i = 0; i < 4; i++) {
+        glEnableVertexAttribArray(2 + i);
+        glVertexAttribPointer(2 + i, 4, GL_FLOAT, GL_FALSE, sizeof(glm::mat4), 
+                             (void*)(sizeof(glm::vec4) * i));
+        glVertexAttribDivisor(2 + i, 1);
+    }
+    
+    glDrawArraysInstanced(GL_TRIANGLES, 0, centerModel.vertexCount, 1);
+    
+    // Очистка
+    for (int i = 0; i < 4; i++) {
+        glDisableVertexAttribArray(2 + i);
+    }
+    glDeleteBuffers(1, &tempInstanceVBO);
+    
+    glDisableVertexAttribArray(Attrib_vertex);
+    glDisableVertexAttribArray(Attrib_texcoord);
+    glUseProgram(0);
+    checkOpenGLerror();
 }
 
 void DrawOrbitingModels(float aspect) {
-    if (!orbitLoaded) return;
+    if (!orbitLoaded || planets.empty()) return;
     
-    for (size_t i = 0; i < planets.size(); i++) {
-        float x = planets[i].orbitRadius * cos(planets[i].orbitAngle);
-        float z = planets[i].orbitRadius * sin(planets[i].orbitAngle);
-        float y = -20.65f * planets[i].size;
-        
-        DrawModel(orbitModel, VBO_Orbit, TexCoordVBO_Orbit, Texture_Orbit,
-                  x, y, z, planets[i].size, planets[i].rotationAngle, aspect);
+    glUseProgram(Program);
+    
+    // Матрицы преобразования
+    glm::mat4 projection = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 300.0f);
+    glm::mat4 view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
+    
+    GLint view_loc = glGetUniformLocation(Program, "u_view");
+    GLint proj_loc = glGetUniformLocation(Program, "u_projection");
+    
+    glUniformMatrix4fv(view_loc, 1, GL_FALSE, glm::value_ptr(view));
+    glUniformMatrix4fv(proj_loc, 1, GL_FALSE, glm::value_ptr(projection));
+    
+    // Привязываем текстуру
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, Texture_Orbit);
+    GLint texture_loc = glGetUniformLocation(Program, "u_texture");
+    glUniform1i(texture_loc, 0);
+    
+    // Обновляем буфер инстансов
+    glBindBuffer(GL_ARRAY_BUFFER, InstanceVBO_Orbit);
+    glBufferData(GL_ARRAY_BUFFER, instanceMatrices.size() * sizeof(glm::mat4), 
+                 instanceMatrices.data(), GL_DYNAMIC_DRAW);
+    
+    // Вершины
+    glEnableVertexAttribArray(Attrib_vertex);
+    glBindBuffer(GL_ARRAY_BUFFER, VBO_Orbit);
+    glVertexAttribPointer(Attrib_vertex, 3, GL_FLOAT, GL_FALSE, 0, 0);
+    
+    // Текстурные координаты
+    glEnableVertexAttribArray(Attrib_texcoord);
+    glBindBuffer(GL_ARRAY_BUFFER, TexCoordVBO_Orbit);
+    glVertexAttribPointer(Attrib_texcoord, 2, GL_FLOAT, GL_FALSE, 0, 0);
+    
+    // Настраиваем инстанцированные атрибуты для матриц
+    glBindBuffer(GL_ARRAY_BUFFER, InstanceVBO_Orbit);
+    
+    // Матрица 4x4 занимает 4 атрибута (каждый vec4)
+    for (int i = 0; i < 4; i++) {
+        glEnableVertexAttribArray(2 + i);
+        glVertexAttribPointer(2 + i, 4, GL_FLOAT, GL_FALSE, sizeof(glm::mat4), 
+                             (void*)(sizeof(glm::vec4) * i));
+        glVertexAttribDivisor(2 + i, 1); // Обновляем для каждого инстанса
     }
+    
+    // ИНСТАНЦИРОВАННЫЙ РЕНДЕРИНГ - один вызов для всех планет!
+    glDrawArraysInstanced(GL_TRIANGLES, 0, orbitModel.vertexCount, planets.size());
+    
+    // Отключаем атрибуты
+    for (int i = 0; i < 4; i++) {
+        glDisableVertexAttribArray(2 + i);
+    }
+    
+    glDisableVertexAttribArray(Attrib_vertex);
+    glDisableVertexAttribArray(Attrib_texcoord);
+    glUseProgram(0);
+    checkOpenGLerror();
 }
 
-// Освобождение буфера
 void ReleaseVBO() {
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     if (VBO_Center != 0) glDeleteBuffers(1, &VBO_Center);
     if (TexCoordVBO_Center != 0) glDeleteBuffers(1, &TexCoordVBO_Center);
     if (VBO_Orbit != 0) glDeleteBuffers(1, &VBO_Orbit);
     if (TexCoordVBO_Orbit != 0) glDeleteBuffers(1, &TexCoordVBO_Orbit);
+    if (InstanceVBO_Orbit != 0) glDeleteBuffers(1, &InstanceVBO_Orbit);
 }
 
-// Освобождение шейдеров
 void ReleaseShader() {
-    // отключаем шейдерную программу
     glUseProgram(0);
-    // Удаляем шейдерную программу
     glDeleteProgram(Program);
 }
 
-// Освобождение текстур
 void ReleaseTextures() {
     if (Texture_Center != 0) glDeleteTextures(1, &Texture_Center);
     if (Texture_Orbit != 0) glDeleteTextures(1, &Texture_Orbit);
 }
 
 void Release() {
-    // Текстуры
     ReleaseTextures();
-    // Шейдеры
     ReleaseShader();
-    // Вершинный буфер
     ReleaseVBO();
 }
 
 void print_options() {
-    std::cout << "Клавиши управления:" << std::endl;
-    std::cout << "1. 1 - загрузить центральную модель (model1.obj + texture1.jpg)" << std::endl;
-    std::cout << "2. 2 - загрузить орбитальные модели (model2.obj + texture2.jpg)" << std::endl;
-    std::cout << "3. Space - запустить/остановить анимацию" << std::endl;
-    std::cout << "4. ESC - выход" << std::endl;
-    std::cout << "5. W/S - Вперед/Назад (Камера)" << std::endl;
-    std::cout << "6. A/D - Влево/Вправо (Камера)" << std::endl;
-    std::cout << "7. LShift/Space(в режиме полета) - Вниз/Вверх (Камера)" << std::endl;
-    std::cout << "8. Мышь - Поворот камеры" << std::endl;
+    std::cout << "\n=== Клавиши управления ===" << std::endl;
+    std::cout << "1. 1 - загрузить центральную модель (christmas_house.obj + christmas_house_texture.jpg)" << std::endl;
+    std::cout << "2. 2 - загрузить орбитальные модели (lolipop.obj + lolipop_texture.jpg)" << std::endl;
+    std::cout << "3. ESC - выход" << std::endl;
+    std::cout << "4. W/S - Вперед/Назад (Камера)" << std::endl;
+    std::cout << "5. A/D - Влево/Вправо (Камера)" << std::endl;
+    std::cout << "6. LShift/Space - Вниз/Вверх (Камера)" << std::endl;
+    std::cout << "7. Мышь - Поворот камеры" << std::endl;
+    std::cout << "\nИСПОЛЬЗУЕТСЯ ИНСТАНЦИРОВАННЫЙ РЕНДЕРИНГ!" << std::endl;
+    std::cout << "Все орбитальные объекты отрисовываются за ОДИН вызов glDrawArraysInstanced()\n" << std::endl;
 }
 
 int main() {
-    sf::Window window(sf::VideoMode(800, 600), "Solar System", 
+    sf::Window window(sf::VideoMode(800, 600), "Solar System with Instancing", 
                      sf::Style::Default, sf::ContextSettings(24, 8, 0, 3, 3));
     window.setVerticalSyncEnabled(true);
-    window.setMouseCursorVisible(false); // Скрываем курсор для управления мышью
+    window.setMouseCursorVisible(false);
     window.setActive(true);
     
     glewInit();
     
-    // Включаем тест глубины
     glEnable(GL_DEPTH_TEST);
     
     InitShader();
     InitSolarSystem();
     
-    bool animating = true;
     print_options();
     
     sf::Clock clock;
@@ -534,7 +599,6 @@ int main() {
                     case sf::Keyboard::Escape: 
                         window.close(); 
                         break;
-                   
                     case sf::Keyboard::Num1:
                         LoadCenterModel("christmas_house.obj", "christmas_house_texture.jpg");
                         break;
@@ -544,7 +608,6 @@ int main() {
                 }
             }
             
-            //мышка
             if (event.type == sf::Event::MouseMoved) {
                 float xpos = static_cast<float>(event.mouseMove.x);
                 float ypos = static_cast<float>(event.mouseMove.y);
@@ -578,7 +641,6 @@ int main() {
             }
         }
         
-        // клава
         float camSpeed = cameraSpeed * deltaTime;
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::W))
             cameraPos += camSpeed * cameraFront;
@@ -588,25 +650,19 @@ int main() {
             cameraPos -= glm::normalize(glm::cross(cameraFront, cameraUp)) * camSpeed;
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::D))
             cameraPos += glm::normalize(glm::cross(cameraFront, cameraUp)) * camSpeed;
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Space)) // Вверх
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Space))
             cameraPos += camSpeed * cameraUp;
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::LShift)) // Вниз
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::LShift))
             cameraPos -= camSpeed * cameraUp;
 
-        // Обновляем планеты
-        if (animating) {
-            UpdatePlanets(deltaTime);
-        }
+        UpdatePlanets(deltaTime);
 
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         glClearColor(0.0f, 0.0f, 0.05f, 1.0f);
 
         float aspect = (float)window.getSize().x / (float)window.getSize().y;
         
-        // Рисуем центральную модель
         DrawCenterModel(aspect);
-        
-        // Рисуем орбитальные модели
         DrawOrbitingModels(aspect);
 
         window.display();
