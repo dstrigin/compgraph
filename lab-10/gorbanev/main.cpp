@@ -96,10 +96,11 @@ void InitVBO() {
     glGenBuffers(1, &VBO);
     
     // Вершины треугольника
-    Vertex triangle[3] = {
+    Vertex triangle[6] = {
         { -1.0f, -1.0f },  // Левый нижний
-        {  0.0f,  1.0f },  // Верх
-        {  1.0f, -1.0f }   // Правый нижний
+        {  0.0f,  0.0f },  // Верх
+        {  0.0f, -1.0f },
+        {  1.0f, 0.0f }   // Правый нижний
     };
 
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
@@ -121,7 +122,7 @@ void Draw() {
     glVertexAttribPointer(Attrib_vertex, 2, GL_FLOAT, GL_FALSE, 0, 0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);  // Отключаем VBO после настройки атрибутов
     
-    glDrawArrays(GL_TRIANGLES, 0, 3);
+    glDrawArrays(GL_TRIANGLE_FAN, 0, 6);
     
     glDisableVertexAttribArray(Attrib_vertex);
     glUseProgram(0);

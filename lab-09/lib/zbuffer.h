@@ -206,7 +206,6 @@ public:
         // Вспомогательная лямбда для модели Ламберта (Diff = max(0, N*L))
         auto calculateLighting = [&](const Point3D& vertexPos, const Point3D& normal) -> float {
             Point3D worldPos = model.transform(vertexPos); // Позиция в мире
-            // Трансформируем нормаль (для вращения), w=0 чтобы игнорировать смещение
             Point3D worldNormal = model.transform(Point3D(normal.x, normal.y, normal.z, 0)).normalize();
             
             Point3D lightDir = (light.position - worldPos).normalize();
@@ -335,16 +334,16 @@ public:
                         Point3D lightDir = (light.position - pixelWorldPos).normalize();
                         
                         float diff = 0.2f + std::max(0.0, pixelNormal.dot(lightDir));
-                        float intensityFactor = diff;
-                        // float intensityFactor = 1.0f;
+                        //float intensityFactor = diff;
+                         float intensityFactor = 1.0f;
 
-                        // if (diff < 0.4f) {
-                        //     intensityFactor = diff * 0.3f; // Тень
-                        // } else if (diff < 0.7f) {
-                        //     intensityFactor = diff * 1.0f; // Основной цвет
-                        // } else {
-                        //     intensityFactor = diff * 1.3f; // Блик (Specular имитация)
-                        // }
+                        if (diff < 0.4f) {
+                            intensityFactor = diff * 0.3f; // Тень
+                        } else if (diff < 0.7f) {
+                            intensityFactor = diff * 1.0f; // Основной цвет
+                        } else {
+                            intensityFactor = diff * 1.3f; // Блик (Specular имитация)
+                        }
                         
                         // Применяем результат
                         sf::Uint8 r = (sf::Uint8)std::min(255.0f, color.r * intensityFactor * light.intensity);

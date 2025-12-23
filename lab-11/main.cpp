@@ -432,6 +432,7 @@ void print_options() {
 }
 
 int main() {
+    print_options();
     sf::Window window(sf::VideoMode(600, 600), "My OpenGL window", sf::Style::Default, sf::ContextSettings(24));
     window.setVerticalSyncEnabled(true);
     window.setActive(true);
