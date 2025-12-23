@@ -78,15 +78,23 @@ const char* VertexShaderSource = R"(
 #version 330 core
 layout (location = 0) in vec3 coord;
 layout (location = 1) in vec2 texcoord;
-layout (location = 2) in mat4 instanceMatrix; // Матрица трансформации для каждого инстанса
+layout (location = 2) in mat4 instanceMatrix; // Для планет
 
 out vec2 v_texcoord;
 
 uniform mat4 u_view;
 uniform mat4 u_projection;
+uniform mat4 u_model; // Для центрального объекта (дома)
+uniform bool u_useInstancing; 
 
 void main() {
-    gl_Position = u_projection * u_view * instanceMatrix * vec4(coord, 1.0);
+    mat4 finalModel;
+    if (u_useInstancing) {
+        finalModel = instanceMatrix;
+    } else {
+        finalModel = u_model;
+    }
+    gl_Position = u_projection * u_view * finalModel * vec4(coord, 1.0);
     v_texcoord = texcoord;
 }
 )";
@@ -407,7 +415,6 @@ void DrawCenterModel(float aspect) {
     static float rotationAngle = 0.0f;
     rotationAngle += 0.05f * 0.016f;
     
-    // Матрицы преобразования
     glm::mat4 projection = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 300.0f);
     glm::mat4 view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
     
@@ -415,55 +422,32 @@ void DrawCenterModel(float aspect) {
     modelMat = glm::rotate(modelMat, rotationAngle, glm::vec3(0.0f, 1.0f, 0.0f));
     modelMat = glm::scale(modelMat, glm::vec3(0.10f));
     
-    // Для центральной модели используем обычный рендеринг без инстансинга
-    GLint view_loc = glGetUniformLocation(Program, "u_view");
-    GLint proj_loc = glGetUniformLocation(Program, "u_projection");
+    // Передаем флаги и матрицы
+    glUniform1i(glGetUniformLocation(Program, "u_useInstancing"), 0); // ВЫКЛ инстансинг
+    glUniformMatrix4fv(glGetUniformLocation(Program, "u_model"), 1, GL_FALSE, glm::value_ptr(modelMat));
+    glUniformMatrix4fv(glGetUniformLocation(Program, "u_view"), 1, GL_FALSE, glm::value_ptr(view));
+    glUniformMatrix4fv(glGetUniformLocation(Program, "u_projection"), 1, GL_FALSE, glm::value_ptr(projection));
     
-    glUniformMatrix4fv(view_loc, 1, GL_FALSE, glm::value_ptr(view));
-    glUniformMatrix4fv(proj_loc, 1, GL_FALSE, glm::value_ptr(projection));
-    
-    // Привязываем текстуру
+    // Текстура
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, Texture_Center);
-    GLint texture_loc = glGetUniformLocation(Program, "u_texture");
-    glUniform1i(texture_loc, 0);
+    glUniform1i(glGetUniformLocation(Program, "u_texture"), 0);
     
-    // Вершины
+    // Вершины и UV
     glEnableVertexAttribArray(Attrib_vertex);
     glBindBuffer(GL_ARRAY_BUFFER, VBO_Center);
     glVertexAttribPointer(Attrib_vertex, 3, GL_FLOAT, GL_FALSE, 0, 0);
     
-    // Текстурные координаты
     glEnableVertexAttribArray(Attrib_texcoord);
     glBindBuffer(GL_ARRAY_BUFFER, TexCoordVBO_Center);
     glVertexAttribPointer(Attrib_texcoord, 2, GL_FLOAT, GL_FALSE, 0, 0);
     
-    // Создаем временный буфер для одной матрицы
-    GLuint tempInstanceVBO;
-    glGenBuffers(1, &tempInstanceVBO);
-    glBindBuffer(GL_ARRAY_BUFFER, tempInstanceVBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(glm::mat4), glm::value_ptr(modelMat), GL_STATIC_DRAW);
-    
-    // Настраиваем атрибуты для матрицы (4 vec4)
-    for (int i = 0; i < 4; i++) {
-        glEnableVertexAttribArray(2 + i);
-        glVertexAttribPointer(2 + i, 4, GL_FLOAT, GL_FALSE, sizeof(glm::mat4), 
-                             (void*)(sizeof(glm::vec4) * i));
-        glVertexAttribDivisor(2 + i, 1);
-    }
-    
-    glDrawArraysInstanced(GL_TRIANGLES, 0, centerModel.vertexCount, 1);
-    
-    // Очистка
-    for (int i = 0; i < 4; i++) {
-        glDisableVertexAttribArray(2 + i);
-    }
-    glDeleteBuffers(1, &tempInstanceVBO);
+    // КЛАССИЧЕСКИЙ ВЫЗОВ 
+    glDrawArrays(GL_TRIANGLES, 0, centerModel.vertexCount);
     
     glDisableVertexAttribArray(Attrib_vertex);
     glDisableVertexAttribArray(Attrib_texcoord);
     glUseProgram(0);
-    checkOpenGLerror();
 }
 
 void DrawOrbitingModels(float aspect) {
@@ -471,59 +455,57 @@ void DrawOrbitingModels(float aspect) {
     
     glUseProgram(Program);
     
-    // Матрицы преобразования
+    // 1. Передаем общие матрицы камеры
     glm::mat4 projection = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 300.0f);
     glm::mat4 view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
     
-    GLint view_loc = glGetUniformLocation(Program, "u_view");
-    GLint proj_loc = glGetUniformLocation(Program, "u_projection");
+    glUniformMatrix4fv(glGetUniformLocation(Program, "u_view"), 1, GL_FALSE, glm::value_ptr(view));
+    glUniformMatrix4fv(glGetUniformLocation(Program, "u_projection"), 1, GL_FALSE, glm::value_ptr(projection));
     
-    glUniformMatrix4fv(view_loc, 1, GL_FALSE, glm::value_ptr(view));
-    glUniformMatrix4fv(proj_loc, 1, GL_FALSE, glm::value_ptr(projection));
-    
-    // Привязываем текстуру
+    // 2. Активируем режим инстансинга в шейдере
+    glUniform1i(glGetUniformLocation(Program, "u_useInstancing"), 1); 
+
+    // 3. Привязываем текстуру планет
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, Texture_Orbit);
-    GLint texture_loc = glGetUniformLocation(Program, "u_texture");
-    glUniform1i(texture_loc, 0);
+    glUniform1i(glGetUniformLocation(Program, "u_texture"), 0);
     
-    // Обновляем буфер инстансов
+    // 4. Обновляем данные в InstanceVBO (новые позиции планет)
     glBindBuffer(GL_ARRAY_BUFFER, InstanceVBO_Orbit);
     glBufferData(GL_ARRAY_BUFFER, instanceMatrices.size() * sizeof(glm::mat4), 
                  instanceMatrices.data(), GL_DYNAMIC_DRAW);
     
-    // Вершины
+    // 5. Настраиваем геометрию (вершины)
     glEnableVertexAttribArray(Attrib_vertex);
     glBindBuffer(GL_ARRAY_BUFFER, VBO_Orbit);
     glVertexAttribPointer(Attrib_vertex, 3, GL_FLOAT, GL_FALSE, 0, 0);
     
-    // Текстурные координаты
+    // 6. Настраиваем текстурные координаты
     glEnableVertexAttribArray(Attrib_texcoord);
     glBindBuffer(GL_ARRAY_BUFFER, TexCoordVBO_Orbit);
     glVertexAttribPointer(Attrib_texcoord, 2, GL_FLOAT, GL_FALSE, 0, 0);
     
-    // Настраиваем инстанцированные атрибуты для матриц
+    // 7. Настраиваем атрибуты матриц (Location 2, 3, 4, 5)
     glBindBuffer(GL_ARRAY_BUFFER, InstanceVBO_Orbit);
-    
-    // Матрица 4x4 занимает 4 атрибута (каждый vec4)
     for (int i = 0; i < 4; i++) {
         glEnableVertexAttribArray(2 + i);
         glVertexAttribPointer(2 + i, 4, GL_FLOAT, GL_FALSE, sizeof(glm::mat4), 
                              (void*)(sizeof(glm::vec4) * i));
-        glVertexAttribDivisor(2 + i, 1); // Обновляем для каждого инстанса
+        glVertexAttribDivisor(2 + i, 1); 
     }
     
-    // ИНСТАНЦИРОВАННЫЙ РЕНДЕРИНГ - один вызов для всех планет!
+    // 8. ОДИН ВЫЗОВ для отрисовки всех планет сразу
     glDrawArraysInstanced(GL_TRIANGLES, 0, orbitModel.vertexCount, planets.size());
     
-    // Отключаем атрибуты
+    // 9. Очистка состояния
     for (int i = 0; i < 4; i++) {
         glDisableVertexAttribArray(2 + i);
+        glVertexAttribDivisor(2 + i, 0); // Сбрасываем делитель обратно
     }
-    
     glDisableVertexAttribArray(Attrib_vertex);
     glDisableVertexAttribArray(Attrib_texcoord);
     glUseProgram(0);
+    
     checkOpenGLerror();
 }
 
