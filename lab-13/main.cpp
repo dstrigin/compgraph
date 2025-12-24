@@ -16,11 +16,13 @@ GLint Attrib_vertex;
 GLint Attrib_texcoord;
 GLint Attrib_instanceMatrix; // Атрибут для матрицы инстанса
 // ID буферов для центральной модели
+GLuint VAO_Center;
 GLuint VBO_Center;
 GLuint TexCoordVBO_Center;
 GLuint Texture_Center;
 // ID буферов для орбитальных моделей
 GLuint VBO_Orbit;
+GLuint VAO_Orbit;
 GLuint TexCoordVBO_Orbit;
 GLuint Texture_Orbit;
 GLuint InstanceVBO_Orbit; // Буфер для данных инстансов
@@ -343,42 +345,63 @@ void InitSolarSystem() {
 void LoadCenterModel(const char* objFile, const char* textureFile) {
     std::cout << "Loading center model..." << std::endl;
     if (LoadOBJ(objFile, centerModel)) {
+        glGenVertexArrays(1, &VAO_Center);
+        glBindVertexArray(VAO_Center);
+
         glGenBuffers(1, &VBO_Center);
         glBindBuffer(GL_ARRAY_BUFFER, VBO_Center);
-        glBufferData(GL_ARRAY_BUFFER, centerModel.vertices.size() * sizeof(Vertex), 
-                     centerModel.vertices.data(), GL_STATIC_DRAW);
-        
+        glBufferData(GL_ARRAY_BUFFER, centerModel.vertices.size() * sizeof(Vertex), centerModel.vertices.data(), GL_STATIC_DRAW);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
+        glEnableVertexAttribArray(0);
+
         glGenBuffers(1, &TexCoordVBO_Center);
         glBindBuffer(GL_ARRAY_BUFFER, TexCoordVBO_Center);
-        glBufferData(GL_ARRAY_BUFFER, centerModel.texcoords.size() * sizeof(TexCoord), 
-                     centerModel.texcoords.data(), GL_STATIC_DRAW);
-        
+        glBufferData(GL_ARRAY_BUFFER, centerModel.texcoords.size() * sizeof(TexCoord), centerModel.texcoords.data(), GL_STATIC_DRAW);
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, 0);
+        glEnableVertexAttribArray(1);
+
         Texture_Center = LoadTexture(textureFile);
-        
+        glBindVertexArray(0); 
         centerLoaded = true;
         std::cout << "Center model loaded successfully!" << std::endl;
-        checkOpenGLerror();
     }
 }
 
 void LoadOrbitModel(const char* objFile, const char* textureFile) {
     std::cout << "Loading orbit model..." << std::endl;
     if (LoadOBJ(objFile, orbitModel)) {
+        glGenVertexArrays(1, &VAO_Orbit);
+        glBindVertexArray(VAO_Orbit);
+
+        // Геометрия
         glGenBuffers(1, &VBO_Orbit);
         glBindBuffer(GL_ARRAY_BUFFER, VBO_Orbit);
-        glBufferData(GL_ARRAY_BUFFER, orbitModel.vertices.size() * sizeof(Vertex), 
-                     orbitModel.vertices.data(), GL_STATIC_DRAW);
-        
+        glBufferData(GL_ARRAY_BUFFER, orbitModel.vertices.size() * sizeof(Vertex), orbitModel.vertices.data(), GL_STATIC_DRAW);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
+        glEnableVertexAttribArray(0);
+
+        // UV
         glGenBuffers(1, &TexCoordVBO_Orbit);
         glBindBuffer(GL_ARRAY_BUFFER, TexCoordVBO_Orbit);
-        glBufferData(GL_ARRAY_BUFFER, orbitModel.texcoords.size() * sizeof(TexCoord), 
-                     orbitModel.texcoords.data(), GL_STATIC_DRAW);
-        
+        glBufferData(GL_ARRAY_BUFFER, orbitModel.texcoords.size() * sizeof(TexCoord), orbitModel.texcoords.data(), GL_STATIC_DRAW);
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, 0);
+        glEnableVertexAttribArray(1);
+
+        // Буфер для матриц инстансов (Location 2, 3, 4, 5)
+        glGenBuffers(1, &InstanceVBO_Orbit);
+        glBindBuffer(GL_ARRAY_BUFFER, InstanceVBO_Orbit);
+        // Резервируем место под матрицы
+        glBufferData(GL_ARRAY_BUFFER, 5 * sizeof(glm::mat4), NULL, GL_DYNAMIC_DRAW);
+
+        for (int i = 0; i < 4; i++) {
+            glEnableVertexAttribArray(2 + i);
+            glVertexAttribPointer(2 + i, 4, GL_FLOAT, GL_FALSE, sizeof(glm::mat4), (void*)(sizeof(glm::vec4) * i));
+            glVertexAttribDivisor(2 + i, 1); 
+        }
+
         Texture_Orbit = LoadTexture(textureFile);
         
-        // Создаем буфер для инстансов
-        glGenBuffers(1, &InstanceVBO_Orbit);
-        
+        glBindVertexArray(0);
         orbitLoaded = true;
         std::cout << "Orbit model loaded successfully!" << std::endl;
         checkOpenGLerror();
@@ -433,20 +456,13 @@ void DrawCenterModel(float aspect) {
     glBindTexture(GL_TEXTURE_2D, Texture_Center);
     glUniform1i(glGetUniformLocation(Program, "u_texture"), 0);
     
-    // Вершины и UV
-    glEnableVertexAttribArray(Attrib_vertex);
-    glBindBuffer(GL_ARRAY_BUFFER, VBO_Center);
-    glVertexAttribPointer(Attrib_vertex, 3, GL_FLOAT, GL_FALSE, 0, 0);
-    
-    glEnableVertexAttribArray(Attrib_texcoord);
-    glBindBuffer(GL_ARRAY_BUFFER, TexCoordVBO_Center);
-    glVertexAttribPointer(Attrib_texcoord, 2, GL_FLOAT, GL_FALSE, 0, 0);
+    // ИСПОЛЬЗУЕМ VAO
+    glBindVertexArray(VAO_Center);
     
     // КЛАССИЧЕСКИЙ ВЫЗОВ 
     glDrawArrays(GL_TRIANGLES, 0, centerModel.vertexCount);
     
-    glDisableVertexAttribArray(Attrib_vertex);
-    glDisableVertexAttribArray(Attrib_texcoord);
+    glBindVertexArray(0);
     glUseProgram(0);
 }
 
@@ -472,38 +488,15 @@ void DrawOrbitingModels(float aspect) {
     
     // 4. Обновляем данные в InstanceVBO (новые позиции планет)
     glBindBuffer(GL_ARRAY_BUFFER, InstanceVBO_Orbit);
-    glBufferData(GL_ARRAY_BUFFER, instanceMatrices.size() * sizeof(glm::mat4), 
-                 instanceMatrices.data(), GL_DYNAMIC_DRAW);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, instanceMatrices.size() * sizeof(glm::mat4), instanceMatrices.data());
     
-    // 5. Настраиваем геометрию (вершины)
-    glEnableVertexAttribArray(Attrib_vertex);
-    glBindBuffer(GL_ARRAY_BUFFER, VBO_Orbit);
-    glVertexAttribPointer(Attrib_vertex, 3, GL_FLOAT, GL_FALSE, 0, 0);
-    
-    // 6. Настраиваем текстурные координаты
-    glEnableVertexAttribArray(Attrib_texcoord);
-    glBindBuffer(GL_ARRAY_BUFFER, TexCoordVBO_Orbit);
-    glVertexAttribPointer(Attrib_texcoord, 2, GL_FLOAT, GL_FALSE, 0, 0);
-    
-    // 7. Настраиваем атрибуты матриц (Location 2, 3, 4, 5)
-    glBindBuffer(GL_ARRAY_BUFFER, InstanceVBO_Orbit);
-    for (int i = 0; i < 4; i++) {
-        glEnableVertexAttribArray(2 + i);
-        glVertexAttribPointer(2 + i, 4, GL_FLOAT, GL_FALSE, sizeof(glm::mat4), 
-                             (void*)(sizeof(glm::vec4) * i));
-        glVertexAttribDivisor(2 + i, 1); 
-    }
+    // ИСПОЛЬЗУЕМ VAO
+    glBindVertexArray(VAO_Orbit);
     
     // 8. ОДИН ВЫЗОВ для отрисовки всех планет сразу
     glDrawArraysInstanced(GL_TRIANGLES, 0, orbitModel.vertexCount, planets.size());
     
-    // 9. Очистка состояния
-    for (int i = 0; i < 4; i++) {
-        glDisableVertexAttribArray(2 + i);
-        glVertexAttribDivisor(2 + i, 0); // Сбрасываем делитель обратно
-    }
-    glDisableVertexAttribArray(Attrib_vertex);
-    glDisableVertexAttribArray(Attrib_texcoord);
+    glBindVertexArray(0);
     glUseProgram(0);
     
     checkOpenGLerror();
@@ -532,6 +525,8 @@ void Release() {
     ReleaseTextures();
     ReleaseShader();
     ReleaseVBO();
+    glDeleteVertexArrays(1, &VAO_Center);
+    glDeleteVertexArrays(1, &VAO_Orbit);
 }
 
 void print_options() {
