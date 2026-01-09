@@ -324,17 +324,16 @@ void InitSolarSystem() {
     // Разные скорости вращения вокруг своей оси
     float rotationSpeeds[] = {2.0f, 1.5f, 1.8f, 1.2f, 1.0f};
     
-    for(int i = 0; i < 5; i++) {
+    for(int i = 0; i < 10; i++) {
         Planet p;
-        p.orbitRadius = orbitRadii[i];        // Каждая планета на своей орбите
-        p.orbitSpeed = orbitSpeeds[i];        // Разные скорости обращения
-        p.rotationSpeed = rotationSpeeds[i];  // Разные скорости вращения
-        p.size = customSizes[i];              // Разные размеры
-        p.orbitAngle = (M_PI * 2 / 5) * i;    // Начальное положение на орбите
+        p.orbitRadius = orbitRadii[i % 5];        // Каждая планета на своей орбите
+        p.orbitSpeed = orbitSpeeds[i % 5];        // Разные скорости обращения
+        p.rotationSpeed = rotationSpeeds[i % 5];  // Разные скорости вращения
+        p.size = customSizes[i % 5];              // Разные размеры
+        p.orbitAngle = (M_PI * 2 / 5) * i + (rand() % 50);    // Начальное положение на орбите
         p.rotationAngle = 0.0f;
         planets.push_back(p);
         
-        // Создаем начальную матрицу для каждого инстанса
         instanceMatrices.push_back(glm::mat4(1.0f));
     }
     
@@ -387,11 +386,11 @@ void LoadOrbitModel(const char* objFile, const char* textureFile) {
         glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, 0);
         glEnableVertexAttribArray(1);
 
-        // Буфер для матриц инстансов (Location 2, 3, 4, 5)
+        // Буфер для матриц инстансов 
         glGenBuffers(1, &InstanceVBO_Orbit);
         glBindBuffer(GL_ARRAY_BUFFER, InstanceVBO_Orbit);
         // Резервируем место под матрицы
-        glBufferData(GL_ARRAY_BUFFER, 5 * sizeof(glm::mat4), NULL, GL_DYNAMIC_DRAW);
+        glBufferData(GL_ARRAY_BUFFER, 10 * sizeof(glm::mat4), NULL, GL_DYNAMIC_DRAW);
 
         for (int i = 0; i < 4; i++) {
             glEnableVertexAttribArray(2 + i);
@@ -456,10 +455,8 @@ void DrawCenterModel(float aspect) {
     glBindTexture(GL_TEXTURE_2D, Texture_Center);
     glUniform1i(glGetUniformLocation(Program, "u_texture"), 0);
     
-    // ИСПОЛЬЗУЕМ VAO
     glBindVertexArray(VAO_Center);
-    
-    // КЛАССИЧЕСКИЙ ВЫЗОВ 
+     
     glDrawArrays(GL_TRIANGLES, 0, centerModel.vertexCount);
     
     glBindVertexArray(0);
@@ -490,10 +487,8 @@ void DrawOrbitingModels(float aspect) {
     glBindBuffer(GL_ARRAY_BUFFER, InstanceVBO_Orbit);
     glBufferSubData(GL_ARRAY_BUFFER, 0, instanceMatrices.size() * sizeof(glm::mat4), instanceMatrices.data());
     
-    // ИСПОЛЬЗУЕМ VAO
     glBindVertexArray(VAO_Orbit);
     
-    // 8. ОДИН ВЫЗОВ для отрисовки всех планет сразу
     glDrawArraysInstanced(GL_TRIANGLES, 0, orbitModel.vertexCount, planets.size());
     
     glBindVertexArray(0);
@@ -538,8 +533,6 @@ void print_options() {
     std::cout << "5. A/D - Влево/Вправо (Камера)" << std::endl;
     std::cout << "6. LShift/Space - Вниз/Вверх (Камера)" << std::endl;
     std::cout << "7. Мышь - Поворот камеры" << std::endl;
-    std::cout << "\nИСПОЛЬЗУЕТСЯ ИНСТАНЦИРОВАННЫЙ РЕНДЕРИНГ!" << std::endl;
-    std::cout << "Все орбитальные объекты отрисовываются за ОДИН вызов glDrawArraysInstanced()\n" << std::endl;
 }
 
 int main() {

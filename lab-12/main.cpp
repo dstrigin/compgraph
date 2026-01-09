@@ -232,17 +232,13 @@ void main() {
 const char* FragShaderCube1 = R"(
 #version 330 core
 in vec2 TexCoord;
-in vec4 Color;
 out vec4 FragColor;
 uniform sampler2D textureSampler;
 uniform float colorIntensity;
 uniform vec3 baseColor;
 void main() {
     vec4 textureColor = texture(textureSampler, TexCoord);
-    vec4 coloredTexture = vec4(textureColor.rgb * baseColor, textureColor.a);
-    
-    // Смешиваем текстуру и окрашенную текстуру
-    FragColor = mix(textureColor, coloredTexture, colorIntensity);
+    FragColor = textureColor * vec4(baseColor, 1.0f) * colorIntensity;
 }
 )";
 
