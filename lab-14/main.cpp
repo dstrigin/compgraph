@@ -12,31 +12,87 @@
 
 // --- Глобальные переменные ---
 
-// ID шейдерной программы
+// ID шейдерной программы (Основная)
 GLuint Program;
+// ID шейдерной программы (Для лампочки - чтобы она светилась сама)
+GLuint LampProgram;
 
 // ID атрибутов шейдера
 GLint Attrib_pos;
 GLint Attrib_tex;
 GLint Attrib_norm;
 
-// Uniforms для освещения и матриц
+// Uniforms для матриц
 GLint Unif_model;
 GLint Unif_view;
 GLint Unif_proj;
 GLint Unif_viewPos;
-GLint Unif_lightDir;
-GLint Unif_lightAmbient;
-GLint Unif_lightDiffuse;
-GLint Unif_lightSpecular;
 GLint Unif_materialShininess;
+
+// Uniform для выбора модели освещения (0 - Phong, 1 - Toon, 2 - Minnaert)
+GLint Unif_lightingModel;
+
+// --- Состояние приложения ---
+enum ControlMode {
+    MODE_CAMERA = 0,    // Управление полетом камеры
+    MODE_POINTLIGHT,    // Управление положением и яркостью лампочки
+    MODE_SPOTLIGHT      // Управление шириной конуса и яркостью фонарика
+};
+ControlMode currentMode = MODE_CAMERA;
+
+// Переменные точечного источника (изменяемые)
+glm::vec3 pointLightPos = glm::vec3(-4.0f, 2.0f, 10.0f);
+float pointLightIntensity = 1.0f; 
+
+// Переменные прожектора (изменяемые)
+bool spotLightOn = true;        // Вкл/Выкл по клавише L
+float spotLightCutOffAngle = 12.5f; // Угол конуса
+float spotLightIntensity = 1.0f;
+
+// Объект визуализации лампочки
+GLuint LightCubeVAO, LightCubeVBO;
+
+// --- Структуры для Uniforms освещения ---
+
+// Направленный свет (Солнце)
+struct DirLight {
+    GLint direction;
+    GLint ambient;
+    GLint diffuse;
+    GLint specular;
+} dirLightLoc;
+
+// Точечный источник (Лампочка)
+struct PointLight {
+    GLint position;
+    GLint constant;
+    GLint linear;
+    GLint quadratic;
+    GLint ambient;
+    GLint diffuse;
+    GLint specular;
+} pointLightLoc;
+
+// Прожектор (Фонарик)
+struct SpotLight {
+    GLint position;
+    GLint direction;
+    GLint cutOff;
+    GLint outerCutOff;
+    GLint constant;
+    GLint linear;
+    GLint quadratic;
+    GLint ambient;
+    GLint diffuse;
+    GLint specular;
+} spotLightLoc;
 
 // Камера
 glm::vec3 cameraPos   = glm::vec3(0.0f, 2.0f, 10.0f);
 glm::vec3 cameraFront = glm::vec3(0.0f, 0.0f, -1.0f);
 glm::vec3 cameraUp    = glm::vec3(0.0f, 1.0f, 0.0f);
 
-float yaw   = -90.0f;
+float yaw    = -90.0f;
 float pitch = 0.0f;
 float lastX = 400.0f;
 float lastY = 300.0f;
@@ -71,11 +127,14 @@ struct GameObject {
     glm::vec3 scale;
     
     std::string name; // Для удобства
+    
+    // Тип освещения: 0 - Phong, 1 - Toon, 2 - Minnaert
+    int lightingType;
 };
 
 std::vector<GameObject> sceneObjects;
 
-// --- Шейдеры (Phong + Directional Light) ---
+// --- Шейдеры (Phong + Toon + Minnaert) ---
 
 const char* VertexShaderSource = R"(
 #version 330 core
@@ -112,44 +171,226 @@ in vec3 FragPos;
 in vec2 TexCoord;
 in vec3 Normal;
 
-// Текстура объекта
 uniform sampler2D texture1;
-
-// Параметры камеры
 uniform vec3 viewPos;
-
-// Параметры Направленного источника света (Directional Light)
-uniform vec3 lightDir;     // Направление света
-uniform vec3 lightAmbient; // Фоновый свет
-uniform vec3 lightDiffuse; // Рассеянный свет
-uniform vec3 lightSpecular;// Зеркальный блик
-
-// Параметры материала
 uniform float materialShininess;
 
+// Выбор модели: 0 = Phong, 1 = Toon, 2 = Minnaert
+uniform int u_lightingModel; 
+
+// --- Структуры источников света ---
+
+struct DirLight {
+    vec3 direction;
+    vec3 ambient;
+    vec3 diffuse;
+    vec3 specular;
+};
+
+struct PointLight {
+    vec3 position;
+    
+    float constant;
+    float linear;
+    float quadratic;
+    
+    vec3 ambient;
+    vec3 diffuse;
+    vec3 specular;
+};
+
+struct SpotLight {
+    vec3 position;
+    vec3 direction;
+    
+    float cutOff;
+    float outerCutOff;
+    
+    float constant;
+    float linear;
+    float quadratic;
+    
+    vec3 ambient;
+    vec3 diffuse;
+    vec3 specular;
+};
+
+uniform DirLight dirLight;
+uniform PointLight pointLight;
+uniform SpotLight spotLight;
+
+// --- Прототипы функций расчета освещения ---
+vec3 CalcDirLight(DirLight light, vec3 normal, vec3 viewDir);
+vec3 CalcPointLight(PointLight light, vec3 normal, vec3 fragPos, vec3 viewDir);
+vec3 CalcSpotLight(SpotLight light, vec3 normal, vec3 fragPos, vec3 viewDir);
+
 void main() {
-    // 0. Базовые вектора
+    // Свойства материала и нормаль
     vec3 norm = normalize(Normal);
     vec3 viewDir = normalize(viewPos - FragPos);
-    // lightDir указывает НА источник света (или инвертируем, если передаем направление лучей)
-    // Здесь предполагаем, что lightDir - это вектор падения света, поэтому берем обратный для расчетов Phong
-    vec3 lightDirection = normalize(-lightDir);
-
-    // 1. Ambient (Фон)
-    vec3 ambient = lightAmbient * texture(texture1, TexCoord).rgb;
-  
-    // 2. Diffuse (Рассеивание)
-    float diff = max(dot(norm, lightDirection), 0.0);
-    vec3 diffuse = lightDiffuse * diff * texture(texture1, TexCoord).rgb;
     
-    // 3. Specular (Блик Фонга)
-    vec3 reflectDir = reflect(-lightDirection, norm);  
-    float spec = pow(max(dot(viewDir, reflectDir), 0.0), materialShininess);
-    vec3 specular = lightSpecular * spec; // Блик обычно белый
+    // 1. Направленный источник (Солнце)
+    vec3 result = CalcDirLight(dirLight, norm, viewDir);
     
-    // Итоговый цвет
-    vec3 result = ambient + diffuse + specular;
+    // 2. Точечный источник (Лампочка)
+    result += CalcPointLight(pointLight, norm, FragPos, viewDir);
+    
+    // 3. Прожектор (Фонарик)
+    result += CalcSpotLight(spotLight, norm, FragPos, viewDir);
+    
     FragColor = vec4(result, 1.0);
+}
+
+// Расчет направленного света
+vec3 CalcDirLight(DirLight light, vec3 normal, vec3 viewDir) {
+    vec3 lightDir = normalize(-light.direction);
+    
+    // Базовые вычисления
+    float diff = max(dot(normal, lightDir), 0.0);
+    vec3 reflectDir = reflect(-lightDir, normal);
+    float spec = pow(max(dot(viewDir, reflectDir), 0.0), materialShininess);
+    
+    // --- Модификация по моделям ---
+    if (u_lightingModel == 1) { // Toon Shading
+        // Дискретизация диффузного света
+        float intensity = dot(normal, lightDir);
+        if (intensity > 0.95) diff = 1.0;
+        else if (intensity > 0.5) diff = 0.6;
+        else if (intensity > 0.25) diff = 0.3;
+        else diff = 0.1;
+        
+        // Резкий блик
+        if (spec > 0.5) spec = 1.0;
+        else spec = 0.0;
+    }
+    else if (u_lightingModel == 2) { // Minnaert
+        float k = 0.8;
+        // Формула: d1 * d2
+        float d1 = pow(max(dot(normal, lightDir), 0.0), 1.0 + k);
+        float ndotv = max(dot(normal, viewDir), 0.0); // Защита от отр. значений
+        float d2 = pow(1.0 - ndotv, 1.0 - k);
+        
+        diff = d1 * d2;
+        // В Minnaert спекуляр часто слабый или стандартный, оставим стандартный но ослабленный
+        spec *= 0.5;
+    }
+    // else == 0 -> Phong (оставляем как есть)
+
+    vec3 ambient  = light.ambient  * vec3(texture(texture1, TexCoord));
+    vec3 diffuse  = light.diffuse  * diff * vec3(texture(texture1, TexCoord));
+    vec3 specular = light.specular * spec; 
+    return (ambient + diffuse + specular);
+}
+
+// Расчет точечного источника
+vec3 CalcPointLight(PointLight light, vec3 normal, vec3 fragPos, vec3 viewDir) {
+    vec3 lightDir = normalize(light.position - fragPos);
+    
+    float diff = max(dot(normal, lightDir), 0.0);
+    vec3 reflectDir = reflect(-lightDir, normal);
+    float spec = pow(max(dot(viewDir, reflectDir), 0.0), materialShininess);
+    
+    // --- Модификация по моделям ---
+    if (u_lightingModel == 1) { // Toon
+        float intensity = dot(normal, lightDir);
+        if (intensity > 0.95) diff = 1.0;
+        else if (intensity > 0.5) diff = 0.6;
+        else if (intensity > 0.25) diff = 0.3;
+        else diff = 0.1;
+
+        if (spec > 0.5) spec = 1.0; else spec = 0.0;
+    }
+    else if (u_lightingModel == 2) { // Minnaert
+        float k = 0.8;
+        float d1 = pow(max(dot(normal, lightDir), 0.0), 1.0 + k);
+        float ndotv = max(dot(normal, viewDir), 0.0);
+        float d2 = pow(1.0 - ndotv, 1.0 - k);
+        diff = d1 * d2;
+        spec *= 0.5;
+    }
+
+    // Attenuation (Затухание)
+    float distance    = length(light.position - fragPos);
+    float attenuation = 1.0 / (light.constant + light.linear * distance + light.quadratic * (distance * distance));     
+    
+    vec3 ambient  = light.ambient  * vec3(texture(texture1, TexCoord));
+    vec3 diffuse  = light.diffuse  * diff * vec3(texture(texture1, TexCoord));
+    vec3 specular = light.specular * spec;
+    
+    ambient  *= attenuation;
+    diffuse  *= attenuation;
+    specular *= attenuation;
+    return (ambient + diffuse + specular);
+}
+
+// Расчет прожектора
+vec3 CalcSpotLight(SpotLight light, vec3 normal, vec3 fragPos, vec3 viewDir) {
+    vec3 lightDir = normalize(light.position - fragPos);
+    
+    float diff = max(dot(normal, lightDir), 0.0);
+    vec3 reflectDir = reflect(-lightDir, normal);
+    float spec = pow(max(dot(viewDir, reflectDir), 0.0), materialShininess);
+    
+    // --- Модификация по моделям ---
+    if (u_lightingModel == 1) { // Toon
+        float intensity = dot(normal, lightDir);
+        if (intensity > 0.95) diff = 1.0;
+        else if (intensity > 0.5) diff = 0.6;
+        else if (intensity > 0.25) diff = 0.3;
+        else diff = 0.1;
+
+        if (spec > 0.5) spec = 1.0; else spec = 0.0;
+    }
+    else if (u_lightingModel == 2) { // Minnaert
+        float k = 0.8;
+        float d1 = pow(max(dot(normal, lightDir), 0.0), 1.0 + k);
+        float ndotv = max(dot(normal, viewDir), 0.0);
+        float d2 = pow(1.0 - ndotv, 1.0 - k);
+        diff = d1 * d2;
+        spec *= 0.5;
+    }
+
+    // Attenuation
+    float distance = length(light.position - fragPos);
+    float attenuation = 1.0 / (light.constant + light.linear * distance + light.quadratic * (distance * distance));     
+    
+    // Spotlight intensity (Мягкие края)
+    float theta     = dot(lightDir, normalize(-light.direction)); 
+    float epsilon   = light.cutOff - light.outerCutOff;
+    float intensity = clamp((theta - light.outerCutOff) / epsilon, 0.0, 1.0);
+    
+    // Для Toon шейдинга можно убрать мягкие края прожектора (сделать резкими),
+    // но для простоты оставим intensity как есть.
+
+    vec3 ambient  = light.ambient  * vec3(texture(texture1, TexCoord));
+    vec3 diffuse  = light.diffuse  * diff * vec3(texture(texture1, TexCoord));
+    vec3 specular = light.specular * spec;
+    
+    ambient  *= attenuation * intensity; 
+    diffuse  *= attenuation * intensity;
+    specular *= attenuation * intensity;
+    
+    return (ambient + diffuse + specular);
+}
+)";
+
+// --- Простой шейдер для отображения источника света (Лампы) ---
+const char* LampVertexShaderSource = R"(
+#version 330 core
+layout (location = 0) in vec3 aPos;
+uniform mat4 model;
+uniform mat4 view;
+uniform mat4 projection;
+void main() {
+    gl_Position = projection * view * model * vec4(aPos, 1.0);
+}
+)";
+
+const char* LampFragShaderSource = R"(
+#version 330 core
+out vec4 FragColor;
+void main() {
+    FragColor = vec4(1.0); // Всегда белый цвет
 }
 )";
 
@@ -290,11 +531,11 @@ GLuint LoadTexture(const char* filename) {
 }
 
 void InitShader() {
+    // --- Основной шейдер ---
     GLuint vShader = glCreateShader(GL_VERTEX_SHADER);
     glShaderSource(vShader, 1, &VertexShaderSource, NULL);
     glCompileShader(vShader);
     
-    // Проверка ошибок компиляции VS (упрощено)
     GLint success; char infoLog[512];
     glGetShaderiv(vShader, GL_COMPILE_STATUS, &success);
     if(!success) { glGetShaderInfoLog(vShader, 512, NULL, infoLog); std::cout << "VS Error: " << infoLog << std::endl; }
@@ -303,7 +544,6 @@ void InitShader() {
     glShaderSource(fShader, 1, &FragShaderSource, NULL);
     glCompileShader(fShader);
     
-    // Проверка ошибок компиляции FS
     glGetShaderiv(fShader, GL_COMPILE_STATUS, &success);
     if(!success) { glGetShaderInfoLog(fShader, 512, NULL, infoLog); std::cout << "FS Error: " << infoLog << std::endl; }
 
@@ -321,19 +561,91 @@ void InitShader() {
     Unif_view  = glGetUniformLocation(Program, "view");
     Unif_proj  = glGetUniformLocation(Program, "projection");
     
-    Unif_viewPos       = glGetUniformLocation(Program, "viewPos");
-    Unif_lightDir      = glGetUniformLocation(Program, "lightDir");
-    Unif_lightAmbient  = glGetUniformLocation(Program, "lightAmbient");
-    Unif_lightDiffuse  = glGetUniformLocation(Program, "lightDiffuse");
-    Unif_lightSpecular = glGetUniformLocation(Program, "lightSpecular");
+    Unif_viewPos        = glGetUniformLocation(Program, "viewPos");
     Unif_materialShininess = glGetUniformLocation(Program, "materialShininess");
+    
+    // Получаем локацию для выбора модели освещения
+    Unif_lightingModel = glGetUniformLocation(Program, "u_lightingModel");
+
+    // --- Локации для Направленного света (Directional) ---
+    dirLightLoc.direction = glGetUniformLocation(Program, "dirLight.direction");
+    dirLightLoc.ambient   = glGetUniformLocation(Program, "dirLight.ambient");
+    dirLightLoc.diffuse   = glGetUniformLocation(Program, "dirLight.diffuse");
+    dirLightLoc.specular  = glGetUniformLocation(Program, "dirLight.specular");
+
+    // --- Локации для Точечного света (Point) ---
+    pointLightLoc.position  = glGetUniformLocation(Program, "pointLight.position");
+    pointLightLoc.ambient   = glGetUniformLocation(Program, "pointLight.ambient");
+    pointLightLoc.diffuse   = glGetUniformLocation(Program, "pointLight.diffuse");
+    pointLightLoc.specular  = glGetUniformLocation(Program, "pointLight.specular");
+    pointLightLoc.constant  = glGetUniformLocation(Program, "pointLight.constant");
+    pointLightLoc.linear    = glGetUniformLocation(Program, "pointLight.linear");
+    pointLightLoc.quadratic = glGetUniformLocation(Program, "pointLight.quadratic");
+
+    // --- Локации для Прожектора (Spot) ---
+    spotLightLoc.position    = glGetUniformLocation(Program, "spotLight.position");
+    spotLightLoc.direction   = glGetUniformLocation(Program, "spotLight.direction");
+    spotLightLoc.cutOff      = glGetUniformLocation(Program, "spotLight.cutOff");
+    spotLightLoc.outerCutOff = glGetUniformLocation(Program, "spotLight.outerCutOff");
+    spotLightLoc.ambient     = glGetUniformLocation(Program, "spotLight.ambient");
+    spotLightLoc.diffuse     = glGetUniformLocation(Program, "spotLight.diffuse");
+    spotLightLoc.specular    = glGetUniformLocation(Program, "spotLight.specular");
+    spotLightLoc.constant    = glGetUniformLocation(Program, "spotLight.constant");
+    spotLightLoc.linear      = glGetUniformLocation(Program, "spotLight.linear");
+    spotLightLoc.quadratic   = glGetUniformLocation(Program, "spotLight.quadratic");
 
     glDeleteShader(vShader);
     glDeleteShader(fShader);
+
+    // --- Шейдер для Лампы (Маркера) ---
+    GLuint vLamp = glCreateShader(GL_VERTEX_SHADER);
+    glShaderSource(vLamp, 1, &LampVertexShaderSource, NULL);
+    glCompileShader(vLamp);
+    GLuint fLamp = glCreateShader(GL_FRAGMENT_SHADER);
+    glShaderSource(fLamp, 1, &LampFragShaderSource, NULL);
+    glCompileShader(fLamp);
+    LampProgram = glCreateProgram();
+    glAttachShader(LampProgram, vLamp);
+    glAttachShader(LampProgram, fLamp);
+    glLinkProgram(LampProgram);
+    glDeleteShader(vLamp);
+    glDeleteShader(fLamp);
+}
+
+// Инициализация кубика для визуализации света
+void InitLightMarker() {
+    float vertices[] = {
+        -0.5f, -0.5f, -0.5f,  0.5f, -0.5f, -0.5f,  0.5f,  0.5f, -0.5f,
+         0.5f,  0.5f, -0.5f, -0.5f,  0.5f, -0.5f, -0.5f, -0.5f, -0.5f,
+
+        -0.5f, -0.5f,  0.5f,  0.5f, -0.5f,  0.5f,  0.5f,  0.5f,  0.5f,
+         0.5f,  0.5f,  0.5f, -0.5f,  0.5f,  0.5f, -0.5f, -0.5f,  0.5f,
+
+        -0.5f,  0.5f,  0.5f, -0.5f,  0.5f, -0.5f, -0.5f, -0.5f, -0.5f,
+        -0.5f, -0.5f, -0.5f, -0.5f, -0.5f,  0.5f, -0.5f,  0.5f,  0.5f,
+
+         0.5f,  0.5f,  0.5f,  0.5f,  0.5f, -0.5f,  0.5f, -0.5f, -0.5f,
+         0.5f, -0.5f, -0.5f,  0.5f, -0.5f,  0.5f,  0.5f,  0.5f,  0.5f,
+
+        -0.5f, -0.5f, -0.5f,  0.5f, -0.5f, -0.5f,  0.5f, -0.5f,  0.5f,
+         0.5f, -0.5f,  0.5f, -0.5f, -0.5f,  0.5f, -0.5f, -0.5f, -0.5f,
+
+        -0.5f,  0.5f, -0.5f,  0.5f,  0.5f, -0.5f,  0.5f,  0.5f,  0.5f,
+         0.5f,  0.5f,  0.5f, -0.5f,  0.5f,  0.5f, -0.5f,  0.5f, -0.5f
+    };
+
+    glGenVertexArrays(1, &LightCubeVAO);
+    glGenBuffers(1, &LightCubeVBO);
+    glBindVertexArray(LightCubeVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, LightCubeVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+    glBindVertexArray(0);
 }
 
 // Добавление объекта в сцену
-void AddObject(const char* objPath, const char* texPath, glm::vec3 pos, glm::vec3 scale, glm::vec3 rot, std::string name) {
+void AddObject(const char* objPath, const char* texPath, glm::vec3 pos, glm::vec3 scale, glm::vec3 rot, std::string name, int lightType = 0) {
     ModelData data;
     if (LoadOBJ(objPath, data)) {
         GameObject obj;
@@ -342,6 +654,7 @@ void AddObject(const char* objPath, const char* texPath, glm::vec3 pos, glm::vec
         obj.scale = scale;
         obj.rotation = rot;
         obj.name = name;
+        obj.lightingType = lightType; // Сохраняем тип освещения
 
         glGenVertexArrays(1, &obj.VAO);
         glBindVertexArray(obj.VAO);
@@ -375,51 +688,92 @@ void AddObject(const char* objPath, const char* texPath, glm::vec3 pos, glm::vec
 }
 
 void InitScene() {
-    // 1. Домик (Центр)
+    InitLightMarker(); // Инициализация кубика света
+
+    // 1. Домик - PHONG (Стандартный)
     AddObject("assets/house.obj", "assets/house.jpg", 
-              glm::vec3(0.0f, -1.0f, 0.0f), glm::vec3(0.1f), glm::vec3(0.0f, 0.0f, 0.0f), "House");
+              glm::vec3(0.0f, -1.0f, 0.0f), glm::vec3(0.1f), glm::vec3(0.0f, 0.0f, 0.0f), "House", 0);
 
-    // 2. Сани (Справа)
+    // 2. Сани - PHONG (Дерево)
     AddObject("assets/sleigh.obj", "assets/sleigh.jpg", 
-              glm::vec3(-4.0f, -1.0f, 1.0f), glm::vec3(0.003f), glm::vec3(0.0f, -45.0f, 0.0f), "Sleigh");
+              glm::vec3(-10.0f, -1.0f, 1.0f), glm::vec3(0.001f), glm::vec3(0.0f, -45.0f, 0.0f), "Sleigh", 0);
 
-    // 3. Воздушный шар (Слева вверху)
+    // 3. Воздушный шар - MINNAERT (Ткань/Резина)
+    // Модель Minnaert хорошо подчеркивает бархатистость и объем на сферических объектах из ткани
     AddObject("assets/balloon.obj", "assets/balloon.jpg", 
-              glm::vec3(-3.0f, 2.0f, -2.0f), glm::vec3(0.1f), glm::vec3(0.0f, 0.0f, 0.0f), "Balloon");
+              glm::vec3(-5.0f, 5.0f, -2.0f), glm::vec3(0.01f), glm::vec3(0.0f, 0.0f, 0.0f), "Balloon", 2);
 
-    // 4. Леденец (Спереди слева)
+    // 4. Леденец - TOON SHADING (Мультяшная конфета)
+    // Яркая стилизованная модель отлично подходит для сладостей
     AddObject("assets/lollipop.obj", "assets/lollipop.jpg", 
-              glm::vec3(-2.0f, -1.0f, 2.0f), glm::vec3(0.1f), glm::vec3(0.0f, 30.0f, 0.0f), "Lollipop");
+              glm::vec3(-10.0f, -0.5f, 1.0f), glm::vec3(0.05f), glm::vec3(0.0f, 30.0f, 0.0f), "Lollipop", 1);
 
-    // 5. Дирижабль (Высоко справа)
+    // 5. Дирижабль - MINNAERT (Ткань корпуса)
     AddObject("assets/zeppelin.obj", "assets/zeppelin.jpg", 
-              glm::vec3(4.0f, 2.0f, -3.0f), glm::vec3(0.01f), glm::vec3(0.0f, 90.0f, 0.0f), "Zeppelin");
+              glm::vec3(4.0f, 25.0f, -3.0f), glm::vec3(4.0f), glm::vec3(0.0f, 90.0f, 0.0f), "Zeppelin", 2);
 }
 
 void DrawScene(float aspect) {
-    glUseProgram(Program);
-
-    // --- 1. Установка освещения (Направленный свет) ---
-    // Свет падает сверху и немного сбоку
-    glm::vec3 lightDir = glm::vec3(-0.5f, -1.0f, -0.3f); 
-    
-    glUniform3fv(Unif_lightDir, 1, glm::value_ptr(lightDir));
-    glUniform3f(Unif_lightAmbient,  0.2f, 0.2f, 0.2f); // Тусклый свет
-    glUniform3f(Unif_lightDiffuse,  0.8f, 0.8f, 0.8f); // Основной свет
-    glUniform3f(Unif_lightSpecular, 1.0f, 1.0f, 1.0f); // Блики
-    glUniform3fv(Unif_viewPos, 1, glm::value_ptr(cameraPos));
-    glUniform1f(Unif_materialShininess, 32.0f); // Коэффициент блеска
-
-    // --- 2. Матрицы камеры ---
+    // --- Матрицы камеры ---
     glm::mat4 projection = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 100.0f);
     glm::mat4 view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
+
+    // --- Рисуем объекты сцены с основным шейдером ---
+    glUseProgram(Program);
+
+    // --- Настройка освещения ---
+
+    // 1. Направленный свет (Солнце) - Статический
+    glUniform3f(dirLightLoc.direction, -0.5f, -1.0f, -0.3f);
+    glUniform3f(dirLightLoc.ambient,   0.05f, 0.05f, 0.05f); 
+    glUniform3f(dirLightLoc.diffuse,   0.4f, 0.4f, 0.4f);    
+    glUniform3f(dirLightLoc.specular,  0.5f, 0.5f, 0.5f);
+
+    // 2. Точечный свет (Лампочка) 
+    glUniform3fv(pointLightLoc.position, 1, glm::value_ptr(pointLightPos)); 
+    glUniform3f(pointLightLoc.ambient,   0.05f, 0.05f, 0.05f);
+    // Применяем интенсивность к цвету лампы (красный оттенок)
+    glUniform3f(pointLightLoc.diffuse,   0.8f * pointLightIntensity, 0.1f * pointLightIntensity, 0.1f * pointLightIntensity);  
+    glUniform3f(pointLightLoc.specular,  1.0f * pointLightIntensity, 0.5f * pointLightIntensity, 0.5f * pointLightIntensity);
+    glUniform1f(pointLightLoc.constant,  1.0f);
+    glUniform1f(pointLightLoc.linear,    0.09f);
+    glUniform1f(pointLightLoc.quadratic, 0.032f);
+
+    // 3. Прожектор 
+    glUniform3fv(spotLightLoc.position,  1, glm::value_ptr(cameraPos));
+    glUniform3fv(spotLightLoc.direction, 1, glm::value_ptr(cameraFront));
+    glUniform3f(spotLightLoc.ambient,    0.0f, 0.0f, 0.0f);
+
+    if (spotLightOn) {
+        // Если включен, применяем интенсивность
+        glUniform3f(spotLightLoc.diffuse,    1.0f * spotLightIntensity, 1.0f * spotLightIntensity, 1.0f * spotLightIntensity);  
+        glUniform3f(spotLightLoc.specular,   1.0f * spotLightIntensity, 1.0f * spotLightIntensity, 1.0f * spotLightIntensity);
+    } else {
+        // Если выключен - черный свет
+        glUniform3f(spotLightLoc.diffuse,    0.0f, 0.0f, 0.0f);  
+        glUniform3f(spotLightLoc.specular,   0.0f, 0.0f, 0.0f);
+    }
+
+    glUniform1f(spotLightLoc.constant,   1.0f);
+    glUniform1f(spotLightLoc.linear,     0.09f);
+    glUniform1f(spotLightLoc.quadratic,  0.032f);
+    
+    // Конус света (динамический cutOff)
+    // outerCutOff сделаем чуть шире основного для мягкости
+    glUniform1f(spotLightLoc.cutOff,      glm::cos(glm::radians(spotLightCutOffAngle))); 
+    glUniform1f(spotLightLoc.outerCutOff, glm::cos(glm::radians(spotLightCutOffAngle + 5.0f))); 
+
+    glUniform3fv(Unif_viewPos, 1, glm::value_ptr(cameraPos));
+    glUniform1f(Unif_materialShininess, 32.0f); 
 
     glUniformMatrix4fv(Unif_view, 1, GL_FALSE, glm::value_ptr(view));
     glUniformMatrix4fv(Unif_proj, 1, GL_FALSE, glm::value_ptr(projection));
 
-    // --- 3. Отрисовка всех объектов ---
+    // --- Отрисовка всех объектов ---
     for (const auto& obj : sceneObjects) {
-        // Формируем Model Matrix
+        // Передаем тип освещения для текущего объекта
+        glUniform1i(Unif_lightingModel, obj.lightingType);
+
         glm::mat4 model = glm::mat4(1.0f);
         model = glm::translate(model, obj.position);
         model = glm::rotate(model, glm::radians(obj.rotation.x), glm::vec3(1,0,0));
@@ -429,15 +783,34 @@ void DrawScene(float aspect) {
 
         glUniformMatrix4fv(Unif_model, 1, GL_FALSE, glm::value_ptr(model));
 
-        // Текстура
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, obj.TextureID);
 
-        // Рисуем
         glBindVertexArray(obj.VAO);
         glDrawArrays(GL_TRIANGLES, 0, obj.vertexCount);
         glBindVertexArray(0);
     }
+
+    // --- Рисуем маркер источника света (Лампочка) ---
+    // Используем отдельный простой шейдер
+    glUseProgram(LampProgram);
+    
+    // Передаем матрицы в Lamp Shader
+    GLint lampModelLoc = glGetUniformLocation(LampProgram, "model");
+    GLint lampViewLoc  = glGetUniformLocation(LampProgram, "view");
+    GLint lampProjLoc  = glGetUniformLocation(LampProgram, "projection");
+
+    glm::mat4 lampModel = glm::mat4(1.0f);
+    lampModel = glm::translate(lampModel, pointLightPos);
+    lampModel = glm::scale(lampModel, glm::vec3(0.2f)); // Маленький кубик
+
+    glUniformMatrix4fv(lampModelLoc, 1, GL_FALSE, glm::value_ptr(lampModel));
+    glUniformMatrix4fv(lampViewLoc,  1, GL_FALSE, glm::value_ptr(view));
+    glUniformMatrix4fv(lampProjLoc,  1, GL_FALSE, glm::value_ptr(projection));
+
+    glBindVertexArray(LightCubeVAO);
+    glDrawArrays(GL_TRIANGLES, 0, 36);
+    glBindVertexArray(0);
 
     glUseProgram(0);
 }
@@ -450,12 +823,15 @@ void Cleanup() {
         glDeleteVertexArrays(1, &obj.VAO);
         glDeleteTextures(1, &obj.TextureID);
     }
+    glDeleteVertexArrays(1, &LightCubeVAO);
+    glDeleteBuffers(1, &LightCubeVBO);
     glDeleteProgram(Program);
+    glDeleteProgram(LampProgram);
 }
 
 int main() {
-    sf::Window window(sf::VideoMode(800, 600), "Phong Lighting Lab", 
-                     sf::Style::Default, sf::ContextSettings(24, 8, 0, 3, 3));
+    sf::Window window(sf::VideoMode(800, 600), "Multiple Lights + Shading Models", 
+                      sf::Style::Default, sf::ContextSettings(24, 8, 0, 3, 3));
     window.setVerticalSyncEnabled(true);
     window.setMouseCursorVisible(false);
     window.setActive(true);
@@ -464,10 +840,20 @@ int main() {
     glEnable(GL_DEPTH_TEST);
     
     InitShader();
-    InitScene(); // Загружает 5 объектов
+    InitScene(); // Загружает объекты и маркер света
     
-    std::cout << "Scene Loaded. Objects: " << sceneObjects.size() << std::endl;
-    std::cout << "Controls: WASD + Mouse, Shift/Space" << std::endl;
+    std::cout << "Scene Loaded." << std::endl;
+    std::cout << "Controls:" << std::endl;
+    std::cout << "[TAB]   Switch Control Mode (Camera -> Point Light -> Spot Light)" << std::endl;
+    std::cout << "[L]     Toggle Flashlight (Spotlight) ON/OFF" << std::endl;
+    std::cout << "--- Mode: CAMERA ---" << std::endl;
+    std::cout << "WASD: Move, Mouse: Look, Shift/Space: Up/Down" << std::endl;
+    std::cout << "--- Mode: POINT LIGHT (Bulb) ---" << std::endl;
+    std::cout << "Arrows/PgUp/PgDn: Move Light Position" << std::endl;
+    std::cout << "+/- : Adjust Intensity" << std::endl;
+    std::cout << "--- Mode: SPOT LIGHT (Flashlight) ---" << std::endl;
+    std::cout << "Left/Right Arrows: Adjust Cone Width" << std::endl;
+    std::cout << "+/- : Adjust Intensity" << std::endl;
 
     sf::Clock clock;
 
@@ -483,9 +869,29 @@ int main() {
             if (event.type == sf::Event::Resized) { 
                 glViewport(0, 0, event.size.width, event.size.height); 
             }
+
+            // Переключение режимов по TAB
+            if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Tab) {
+                if (currentMode == MODE_CAMERA) {
+                    currentMode = MODE_POINTLIGHT;
+                    std::cout << "Mode switched to: POINT LIGHT EDIT" << std::endl;
+                } else if (currentMode == MODE_POINTLIGHT) {
+                    currentMode = MODE_SPOTLIGHT;
+                    std::cout << "Mode switched to: SPOT LIGHT EDIT" << std::endl;
+                } else {
+                    currentMode = MODE_CAMERA;
+                    std::cout << "Mode switched to: CAMERA FLY" << std::endl;
+                }
+            }
+
+            // Включение/Выключение прожектора (L) - работает всегда
+            if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::L) {
+                spotLightOn = !spotLightOn;
+                std::cout << "Spotlight: " << (spotLightOn ? "ON" : "OFF") << std::endl;
+            }
             
-            // Обработка мыши
-            if (event.type == sf::Event::MouseMoved) {
+            // Обработка мыши (Работает только в режиме камеры)
+            if (currentMode == MODE_CAMERA && event.type == sf::Event::MouseMoved) {
                 float xpos = static_cast<float>(event.mouseMove.x);
                 float ypos = static_cast<float>(event.mouseMove.y);
 
@@ -513,16 +919,60 @@ int main() {
                 front.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
                 cameraFront = glm::normalize(front);
             }
+            // Обновляем позицию мыши даже если не двигаем камеру, чтобы не было скачка при возврате
+            if (currentMode != MODE_CAMERA && event.type == sf::Event::MouseMoved) {
+                 lastX = static_cast<float>(event.mouseMove.x);
+                 lastY = static_cast<float>(event.mouseMove.y);
+            }
         }
         
-        // Управление камерой
-        float camSpeed = cameraSpeed * deltaTime;
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::W)) cameraPos += camSpeed * cameraFront;
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::S)) cameraPos -= camSpeed * cameraFront;
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::A)) cameraPos -= glm::normalize(glm::cross(cameraFront, cameraUp)) * camSpeed;
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::D)) cameraPos += glm::normalize(glm::cross(cameraFront, cameraUp)) * camSpeed;
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Space)) cameraPos += camSpeed * cameraUp;
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::LShift)) cameraPos -= camSpeed * cameraUp;
+        // --- Управление в зависимости от режима ---
+
+        if (currentMode == MODE_CAMERA) {
+            // Управление камерой
+            float camSpeed = cameraSpeed * deltaTime;
+            if (sf::Keyboard::isKeyPressed(sf::Keyboard::W)) cameraPos += camSpeed * cameraFront;
+            if (sf::Keyboard::isKeyPressed(sf::Keyboard::S)) cameraPos -= camSpeed * cameraFront;
+            if (sf::Keyboard::isKeyPressed(sf::Keyboard::A)) cameraPos -= glm::normalize(glm::cross(cameraFront, cameraUp)) * camSpeed;
+            if (sf::Keyboard::isKeyPressed(sf::Keyboard::D)) cameraPos += glm::normalize(glm::cross(cameraFront, cameraUp)) * camSpeed;
+            if (sf::Keyboard::isKeyPressed(sf::Keyboard::Space)) cameraPos += camSpeed * cameraUp;
+            if (sf::Keyboard::isKeyPressed(sf::Keyboard::LShift)) cameraPos -= camSpeed * cameraUp;
+        }
+        else if (currentMode == MODE_POINTLIGHT) {
+            // Настройка точечного источника
+            float lightMoveSpeed = 5.0f * deltaTime;
+            // Перемещение (Стрелки - X/Z, PageUp/Down - Y)
+            if (sf::Keyboard::isKeyPressed(sf::Keyboard::Up))    pointLightPos.z -= lightMoveSpeed;
+            if (sf::Keyboard::isKeyPressed(sf::Keyboard::Down))  pointLightPos.z += lightMoveSpeed;
+            if (sf::Keyboard::isKeyPressed(sf::Keyboard::Left))  pointLightPos.x -= lightMoveSpeed;
+            if (sf::Keyboard::isKeyPressed(sf::Keyboard::Right)) pointLightPos.x += lightMoveSpeed;
+            if (sf::Keyboard::isKeyPressed(sf::Keyboard::PageUp))   pointLightPos.y += lightMoveSpeed;
+            if (sf::Keyboard::isKeyPressed(sf::Keyboard::PageDown)) pointLightPos.y -= lightMoveSpeed;
+
+            // Интенсивность (+/-)
+            if (sf::Keyboard::isKeyPressed(sf::Keyboard::Add) || sf::Keyboard::isKeyPressed(sf::Keyboard::Equal)) 
+                pointLightIntensity += 1.0f * deltaTime;
+            if (sf::Keyboard::isKeyPressed(sf::Keyboard::Subtract) || sf::Keyboard::isKeyPressed(sf::Keyboard::Hyphen)) 
+                pointLightIntensity -= 1.0f * deltaTime;
+            if (pointLightIntensity < 0.0f) pointLightIntensity = 0.0f;
+        }
+        else if (currentMode == MODE_SPOTLIGHT) {
+            // Настройка прожектора
+            // Ширина конуса (Стрелки влево/вправо)
+            if (sf::Keyboard::isKeyPressed(sf::Keyboard::Right)) spotLightCutOffAngle += 10.0f * deltaTime;
+            if (sf::Keyboard::isKeyPressed(sf::Keyboard::Left))  spotLightCutOffAngle -= 10.0f * deltaTime;
+            
+            // Ограничиваем угол (от 1 до 90 градусов)
+            if (spotLightCutOffAngle < 1.0f) spotLightCutOffAngle = 1.0f;
+            if (spotLightCutOffAngle > 90.0f) spotLightCutOffAngle = 90.0f;
+
+            // Интенсивность (+/-)
+            if (sf::Keyboard::isKeyPressed(sf::Keyboard::Add) || sf::Keyboard::isKeyPressed(sf::Keyboard::Equal)) 
+                spotLightIntensity += 1.0f * deltaTime;
+            if (sf::Keyboard::isKeyPressed(sf::Keyboard::Subtract) || sf::Keyboard::isKeyPressed(sf::Keyboard::Hyphen)) 
+                spotLightIntensity -= 1.0f * deltaTime;
+            if (spotLightIntensity < 0.0f) spotLightIntensity = 0.0f;
+        }
 
         // Рендер
         glClearColor(0.1f, 0.1f, 0.15f, 1.0f);
